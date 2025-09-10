@@ -26,35 +26,35 @@ An unofficial Model Context Protocol (MCP) server that provides AI assistants li
 - Update existing appointments
 - Delete appointments
 
-## Installation & Deployment
+## Installation
 
-### Option 1: Cloud Deployment with Smithery.ai (Recommended)
+### Using Smithery.ai (Recommended)
 
-Deploy directly to Smithery.ai for secure, cloud-hosted MCP server:
+The easiest way to use this MCP server is through Smithery.ai:
 
-1. Fork this repository to your GitHub account
-2. Connect your GitHub to [Smithery.ai](https://smithery.ai)
-3. Deploy this project and configure your Cozi credentials securely in the dashboard
-4. Use the deployed MCP server URL in your AI assistant
+**🚀 [Deploy on Smithery.ai](https://smithery.ai/server/@mjucius/cozi_mcp)**
 
-### Option 2: Local Development
+Visit the server page for complete installation instructions and one-click deployment to your AI assistant.
 
-1. Install dependencies with uv (recommended):
+### Local Development
+
+For developers who want to modify or contribute to the project:
+
+1. Clone the repository:
+```bash
+git clone https://github.com/mjucius/cozi-mcp.git
+cd cozi-mcp
+```
+
+2. Install dependencies:
 ```bash
 uv sync
 ```
 
-Or with pip:
-```bash
-pip install -e .
-```
-
-2. For local testing, use the Smithery playground:
+3. Start the development playground:
 ```bash
 uv run playground
 ```
-
-3. For Claude Desktop integration, set up credentials as environment variables
 
 ## Usage
 
@@ -75,41 +75,11 @@ uv run dev
 
 The playground provides a web interface to test all MCP tools with real-time responses and debugging information.
 
-### Integration with Claude Desktop
+### Integration with AI Assistants
 
-#### Using Smithery.ai Deployment (Recommended)
+The easiest way to integrate this MCP server is through the [Smithery.ai server page](https://smithery.ai/server/@mjucius/cozi_mcp), which provides step-by-step instructions for your specific AI assistant.
 
-Use the cloud-deployed server URL from Smithery.ai:
-
-```json
-{
-  "mcpServers": {
-    "cozi": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-http", "YOUR_SMITHERY_URL"]
-    }
-  }
-}
-```
-
-#### Using Local Installation
-
-For local development, use the stdio interface:
-
-```json
-{
-  "mcpServers": {
-    "cozi": {
-      "command": "python",
-      "args": ["/path/to/src/cozi_mcp/server.py"],
-      "env": {
-        "COZI_USERNAME": "your-email@example.com",
-        "COZI_PASSWORD": "your-password"
-      }
-    }
-  }
-}
-```
+For advanced users doing local development, the server can be run locally using the stdio interface.
 
 ## Development
 
