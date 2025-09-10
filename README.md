@@ -2,6 +2,8 @@
 
 An unofficial Model Context Protocol (MCP) server that provides AI assistants like Claude Desktop with access to [Cozi Family Organizer](https://www.cozi.com/) functionality. This server exposes Cozi's lists, calendar, and family management features through a standardized MCP interface so you can ask your AI to manage events and lists for you.
 
+🚀 **Now deployable on [Smithery.ai](https://smithery.ai)** - Deploy this MCP server to the cloud with secure credential management!
+
 ## Features
 
 ### Family Management
@@ -24,52 +26,82 @@ An unofficial Model Context Protocol (MCP) server that provides AI assistants li
 - Update existing appointments
 - Delete appointments
 
-## Installation
+## Installation & Deployment
 
-1. Install the package:
+### Option 1: Cloud Deployment with Smithery.ai (Recommended)
+
+Deploy directly to Smithery.ai for secure, cloud-hosted MCP server:
+
+1. Fork this repository to your GitHub account
+2. Connect your GitHub to [Smithery.ai](https://smithery.ai)
+3. Deploy this project and configure your Cozi credentials securely in the dashboard
+4. Use the deployed MCP server URL in your AI assistant
+
+### Option 2: Local Development
+
+1. Install dependencies with uv (recommended):
 ```bash
-pip install cozi-mcp
+uv sync
 ```
 
-2. Set up your Cozi credentials by copying the example environment file:
+Or with pip:
 ```bash
-cp .env.example .env
+pip install -e .
 ```
 
-3. Edit `.env` and add your Cozi account credentials:
+2. For local testing, use the Smithery playground:
+```bash
+uv run playground
 ```
-COZI_USERNAME=your-email@example.com
-COZI_PASSWORD=your-password
-```
+
+3. For Claude Desktop integration, set up credentials as environment variables
 
 ## Usage
 
-### Running the Server
+### Cloud Deployment (Smithery.ai)
 
-Start the MCP server:
+Once deployed on Smithery.ai, your MCP server runs in the cloud and can be accessed by any MCP-compatible AI assistant using the provided endpoint URL.
+
+### Local Development & Testing
+
+Test the server locally with the interactive playground:
 ```bash
-python cozi_mcp.py
+# Start the interactive playground
+uv run playground
+
+# Or start development server
+uv run dev
 ```
 
-The server communicates via JSON-RPC over stdin/stdout, following the MCP protocol specification.
-
-### Testing
-
-You can test the server with test credentials:
-```bash
-COZI_USERNAME=test COZI_PASSWORD=test timeout 3 python cozi_mcp.py
-```
+The playground provides a web interface to test all MCP tools with real-time responses and debugging information.
 
 ### Integration with Claude Desktop
 
-To use this server with Claude Desktop, add the following configuration to your `claude_desktop_config.json`:
+#### Using Smithery.ai Deployment (Recommended)
+
+Use the cloud-deployed server URL from Smithery.ai:
+
+```json
+{
+  "mcpServers": {
+    "cozi": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-http", "YOUR_SMITHERY_URL"]
+    }
+  }
+}
+```
+
+#### Using Local Installation
+
+For local development, use the stdio interface:
 
 ```json
 {
   "mcpServers": {
     "cozi": {
       "command": "python",
-      "args": ["/path/to/cozi_mcp.py"],
+      "args": ["/path/to/src/cozi_mcp/server.py"],
       "env": {
         "COZI_USERNAME": "your-email@example.com",
         "COZI_PASSWORD": "your-password"
@@ -82,12 +114,14 @@ To use this server with Claude Desktop, add the following configuration to your 
 ## Development
 
 ### Requirements
-- Python 3.8+
+- Python 3.10+
 - Cozi Family Organizer account
+- uv (recommended) or pip
 
 ### Dependencies
 - `mcp>=1.0.0` - Model Context Protocol framework
 - `py-cozi-client>=1.3.0` - Cozi API client library
+- `smithery` - Smithery.ai deployment framework
 
 ### Development Setup
 
@@ -97,12 +131,32 @@ git clone https://github.com/yourusername/cozi-mcp.git
 cd cozi-mcp
 ```
 
-2. Install in development mode:
+2. Install dependencies:
 ```bash
+# With uv (recommended)
+uv sync
+
+# Or with pip
 pip install -e .
 ```
 
-3. Set up your environment variables as described above.
+3. Start the development playground:
+```bash
+uv run playground
+```
+
+### Project Structure
+
+```
+cozi-mcp/
+├── smithery.yaml              # Smithery.ai deployment config
+├── pyproject.toml             # Project dependencies and metadata  
+├── src/
+│   └── cozi_mcp/
+│       ├── __init__.py       # Package exports
+│       └── server.py         # MCP server implementation
+└── [other files...]
+```
 
 ## Available MCP Tools
 
@@ -132,11 +186,12 @@ The server exposes these tools for AI assistants:
 ## Architecture
 
 This MCP server is built using:
-- **FastMCP** - Simplified MCP server framework
+- **FastMCP** - Simplified MCP server framework  
+- **Smithery.ai** - Cloud deployment and credential management
 - **py-cozi-client** - Python client library for Cozi's API
 - **Pydantic models** - All API responses use structured data models
 
-The server maintains a single authenticated session with Cozi and exposes all functionality through the MCP protocol.
+The server maintains a single authenticated session with Cozi and exposes all functionality through the MCP protocol. When deployed on Smithery.ai, credentials are securely managed through the platform's configuration system.
 
 ## License
 
