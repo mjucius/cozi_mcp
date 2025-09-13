@@ -253,7 +253,7 @@ def create_server():
             Updated list object
         """
         try:
-            status = ItemStatus.COMPLETED if completed else ItemStatus.ACTIVE
+            status = ItemStatus.COMPLETE if completed else ItemStatus.INCOMPLETE
             
             config = ctx.session_config
             client = await get_cozi_client(config.username, config.password)
@@ -270,24 +270,23 @@ def create_server():
             raise
 
     @mcp.tool()
-    async def remove_items(list_id: str, item_ids: List[str], ctx: Context) -> Dict[str, Any]:
+    async def remove_items(list_id: str, item_ids: List[str], ctx: Context) -> bool:
         """Remove items from a list.
-        
+
         Args:
             list_id: ID of the list to remove items from
             item_ids: List of item IDs to remove
-            
+
         Returns:
-            Updated list object
+            True if removal was successful
         """
         try:
             config = ctx.session_config
             client = await get_cozi_client(config.username, config.password)
-            updated_list = await client.remove_items(list_id, item_ids)
-            
-            # Return the pydantic model as dictionary directly
-            return updated_list.model_dump()
-        
+            result = await client.remove_items(list_id, item_ids)
+
+            return result
+
         except CoziException as e:
             logger.error(f"Cozi API error in remove_items: {e}")
             raise
@@ -324,22 +323,22 @@ def create_server():
 
     @mcp.tool()
     async def create_appointment(
-        subject: str, 
-        start_date: str, 
-        end_date: str, 
+        subject: str,
+        start_date: str,
+        end_date: str,
         all_day: bool = False,
         notes: str = "",
         ctx: Context = None
     ) -> Dict[str, Any]:
         """Create a new calendar appointment.
-        
+
         Args:
             subject: Appointment title/subject
             start_date: Start date/time in ISO format (e.g., "2024-03-15T10:00:00")
             end_date: End date/time in ISO format (e.g., "2024-03-15T11:00:00")
             all_day: Whether this is an all-day event (default: False)
             notes: Additional notes for the appointment (default: "")
-            
+
         Returns:
             Created appointment object
         """
@@ -347,20 +346,28 @@ def create_server():
             # Parse ISO date strings to datetime objects
             start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
             end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-            
+
+            # Create CoziAppointment object with the correct field names
+            appointment_data = {
+                'subject': subject,
+                'start_day': start_dt.date(),
+                'notes': notes
+            }
+
+            # Add time fields only if not all-day
+            if not all_day:
+                appointment_data['start_time'] = start_dt.time()
+                appointment_data['end_time'] = end_dt.time()
+
+            appointment = CoziAppointment(**appointment_data)
+
             config = ctx.session_config
             client = await get_cozi_client(config.username, config.password)
-            appointment = await client.create_appointment(
-                subject=subject,
-                start_date=start_dt,
-                end_date=end_dt,
-                all_day=all_day,
-                notes=notes
-            )
-            
+            created_appointment = await client.create_appointment(appointment)
+
             # Return the pydantic model as dictionary directly
-            return appointment.model_dump()
-        
+            return created_appointment.model_dump()
+
         except CoziException as e:
             logger.error(f"Cozi API error in create_appointment: {e}")
             raise
