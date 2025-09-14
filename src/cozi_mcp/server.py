@@ -63,9 +63,19 @@ def create_server():
     @mcp.tool()
     async def get_family_members(ctx: Context) -> List[Dict[str, Any]]:
         """Get all family members in the Cozi account.
-        
+
+        This is often used as a first step when creating appointments with specific attendees.
+        Use the 'id' field from each family member when specifying attendees for appointments.
+
         Returns:
-            List of family member objects with their details
+            List of family member objects with their details including:
+            - id: Unique identifier (use this for appointment attendees)
+            - name: Display name
+            - Other member details
+
+        Example workflow:
+            1. Call get_family_members() to get family member IDs
+            2. Use those IDs in the attendees parameter when creating appointments
         """
         try:
             config = ctx.session_config
@@ -326,21 +336,42 @@ def create_server():
         subject: str,
         start_date: str,
         end_date: str,
+        attendees: List[str] = None,
         all_day: bool = False,
         notes: str = "",
         ctx: Context = None
     ) -> Dict[str, Any]:
         """Create a new calendar appointment.
 
+        When creating appointments for specific people, first use get_family_members()
+        to get the family member IDs, then include those IDs in the attendees parameter.
+
         Args:
-            subject: Appointment title/subject
+            subject: Appointment title/subject (e.g., "Soccer practice - Alice, Bob, Charlie")
             start_date: Start date/time in ISO format (e.g., "2024-03-15T10:00:00")
             end_date: End date/time in ISO format (e.g., "2024-03-15T11:00:00")
+            attendees: List of family member IDs who will attend this event.
+                      Use get_family_members() first to get the correct IDs.
+                      Leave empty for family-wide events (default: empty list)
             all_day: Whether this is an all-day event (default: False)
             notes: Additional notes for the appointment (default: "")
 
         Returns:
             Created appointment object
+
+        Example workflow for appointments with specific people:
+            1. Call get_family_members() to get family member details
+            2. Find the IDs of the people mentioned in the appointment
+            3. Pass those IDs in the attendees parameter
+
+        Example:
+            # For "Soccer practice - Alice, Bob, Charlie"
+            # First get family members, find Alice's, Bob's, and Charlie's IDs
+            # Then call: create_appointment(
+            #   subject="Soccer practice - Alice, Bob, Charlie",
+            #   attendees=["alice-id-123", "bob-id-456", "charlie-id-789"],
+            #   ...
+            # )
         """
         try:
             # Parse ISO date strings to datetime objects
@@ -351,7 +382,8 @@ def create_server():
             appointment_data = {
                 'subject': subject,
                 'start_day': start_dt.date(),
-                'notes': notes
+                'notes': notes,
+                'attendees': attendees if attendees is not None else []
             }
 
             # Add time fields only if not all-day
@@ -378,12 +410,36 @@ def create_server():
     @mcp.tool()
     async def update_appointment(appointment_obj: Dict[str, Any], ctx: Context) -> Dict[str, Any]:
         """Update an existing calendar appointment.
-        
+
+        To modify attendees for an appointment, use get_family_members() to get the
+        correct family member IDs, then update the 'attendees' field in the appointment object.
+
         Args:
-            appointment_obj: Appointment object dictionary to update
-            
+            appointment_obj: Appointment object dictionary to update. Modify any fields
+                           you want to change, including:
+                           - subject: Change the title
+                           - attendees: List of family member IDs (use get_family_members() first)
+                           - start_day, start_time, end_time: Change timing
+                           - notes: Add or modify notes
+                           - all other appointment fields
+
         Returns:
             Updated appointment object
+
+        Example workflow for modifying attendees:
+            1. Get the current appointment (from get_calendar() or previous operations)
+            2. Call get_family_members() to get family member details
+            3. Find the IDs of people who should attend
+            4. Modify the appointment_obj['attendees'] field with the new list of IDs
+            5. Call update_appointment() with the modified appointment object
+
+        Example:
+            # To add or change attendees for an existing appointment
+            # 1. Get appointment from calendar
+            # 2. Get family members to find IDs
+            # 3. Update attendees:
+            # appointment_obj['attendees'] = ['alice-id-123', 'bob-id-456']
+            # 4. Call update_appointment(appointment_obj)
         """
         try:
             # Convert dictionary back to pydantic model
