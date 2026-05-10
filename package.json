@@ -1,0 +1,71 @@
+{
+  "name": "@mjucius/cozi-mcp",
+  "version": "2.0.0",
+  "description": "Unofficial MCP server for Cozi Family Organizer (lists + calendar). Distributed as MCPB, on Smithery, and via npx.",
+  "license": "MIT",
+  "author": {
+    "name": "Matthew Jucius",
+    "email": "matthew@jucius.com"
+  },
+  "homepage": "https://github.com/mjucius/cozi_mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mjucius/cozi_mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mjucius/cozi_mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "cozi",
+    "family-organizer",
+    "model-context-protocol",
+    "claude"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "main": "./dist/server.js",
+  "module": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    },
+    "./bin": "./dist/bin.js"
+  },
+  "bin": {
+    "cozi-mcp": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/bin.ts",
+    "start": "node dist/bin.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "playground": "npx -y @smithery/cli dev",
+    "bundle:mcpb": "npm run build && npx -y @anthropic-ai/mcpb pack ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.46"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "msw": "^2.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

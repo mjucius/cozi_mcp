@@ -1,0 +1,69 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "cozi-mcp",
+  "display_name": "Cozi Family Organizer",
+  "version": "2.0.0",
+  "description": "Manage your Cozi lists, calendar, and family members from your AI assistant.",
+  "long_description": "Unofficial MCP server for the Cozi Family Organizer. Lets your AI assistant read and update your shared shopping lists, to-do lists, and family calendar. Your Cozi credentials are stored in your OS keychain by Claude Desktop and never leave your machine — the author of this extension never sees your data.",
+  "author": {
+    "name": "Matthew Jucius",
+    "email": "matthew@jucius.com",
+    "url": "https://github.com/mjucius"
+  },
+  "homepage": "https://github.com/mjucius/cozi_mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mjucius/cozi_mcp"
+  },
+  "license": "MIT",
+  "keywords": ["cozi", "family", "calendar", "lists", "todo", "shopping"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/bin.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/bin.js"],
+      "env": {
+        "COZI_USERNAME": "${user_config.username}",
+        "COZI_PASSWORD": "${user_config.password}"
+      }
+    }
+  },
+  "user_config": {
+    "username": {
+      "type": "string",
+      "title": "Cozi username (email)",
+      "description": "Your Cozi account email address.",
+      "required": true
+    },
+    "password": {
+      "type": "string",
+      "title": "Cozi password",
+      "description": "Your Cozi account password. Stored securely in your OS keychain.",
+      "required": true,
+      "sensitive": true
+    }
+  },
+  "tools": [
+    { "name": "family_members", "description": "List family members." },
+    { "name": "get_lists", "description": "Summarize all lists. Optionally filter by 'shopping' or 'todo'." },
+    { "name": "get_list_items", "description": "Items in one list. Excludes completed by default." },
+    { "name": "create_list", "description": "Create a list ('shopping' or 'todo')." },
+    { "name": "delete_list", "description": "Delete a list." },
+    { "name": "add_item", "description": "Add an item to a list." },
+    { "name": "update_item", "description": "Update an item's text and/or completion status." },
+    { "name": "remove_items", "description": "Remove items from a list." },
+    { "name": "get_calendar", "description": "Appointments for one month." },
+    { "name": "create_appointment", "description": "Create a calendar appointment." },
+    { "name": "update_appointment", "description": "Partial-update an appointment, preserving fields you don't pass." },
+    { "name": "delete_appointment", "description": "Delete an appointment." }
+  ],
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}

@@ -1,1 +1,17 @@
-runtime: "python"
+runtime: typescript
+target: dist/server.js
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required: [username, password]
+    properties:
+      username:
+        type: string
+        title: Cozi username
+        description: Your Cozi account email address.
+      password:
+        type: string
+        title: Cozi password
+        description: Your Cozi account password.
+        format: password

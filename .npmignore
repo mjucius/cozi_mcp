@@ -1,0 +1,12 @@
+src/
+tests/
+scripts/
+*.config.ts
+tsconfig.json
+.nvmrc
+.gitignore
+.github/
+manifest.json
+smithery.yaml
+*.mcpb
+coverage/

@@ -1,172 +1,141 @@
 # Cozi MCP Server
 
-An unofficial Model Context Protocol (MCP) server that provides AI assistants like Claude Desktop with access to [Cozi Family Organizer](https://www.cozi.com/) functionality. This server exposes Cozi's lists, calendar, and family management features through a standardized MCP interface so you can ask your AI to manage events and lists for you.
+An unofficial [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants like Claude read and update your [Cozi Family Organizer](https://www.cozi.com/) lists and calendar.
 
-🚀 **Now deployable on [Smithery.ai](https://smithery.ai)** - Deploy this MCP server to the cloud with secure credential management!
+Each user runs their own instance against their own Cozi account. Your credentials are stored in your MCP client's secure config (Claude Desktop's OS keychain, Smithery's encrypted session config, or your local environment) and never leave your machine — the author of this server has no access to your data.
 
-## Features
+## Install
 
-### Family Management
-- Get family members and their information
+### 1. MCPB (recommended for Claude Desktop)
 
-### List Management  
-- View all lists (shopping and todo lists)
-- Filter lists by type
-- Create and delete lists
+Download the latest `.mcpb` from the [Releases page](https://github.com/mjucius/cozi_mcp/releases) and double-click to install in Claude Desktop. You'll be prompted for your Cozi username and password — they're stored securely in your OS keychain.
 
-### Item Management
-- Add items to lists
-- Update item text
-- Mark items as complete/incomplete
-- Remove items from lists
+This path requires no Node, npm, or Python install on your machine.
 
-### Calendar Management
-- View appointments for any month
-- Create new appointments
-- Update existing appointments
-- Delete appointments
+### 2. Smithery (for other MCP clients)
 
-## Installation
+For Cursor, ChatGPT-style clients, or web agents that connect to Smithery-hosted servers:
 
-### Using Smithery.ai (Recommended)
+**[Deploy on Smithery.ai →](https://smithery.ai/server/@mjucius/cozi_mcp)**
 
-The easiest way to use this MCP server is through Smithery.ai:
+Configure your Cozi credentials in the Smithery UI; each session runs in isolation with its own credential set.
 
-**🚀 [Deploy on Smithery.ai](https://smithery.ai/server/@mjucius/cozi_mcp)**
+### 3. npx (for power users)
 
-Visit the server page for complete installation instructions and one-click deployment to your AI assistant.
+Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP client config file):
 
-### Local Development
-
-For developers who want to modify or contribute to the project:
-
-1. Clone the repository:
-```bash
-git clone https://github.com/mjucius/cozi-mcp.git
-cd cozi-mcp
+```json
+{
+  "mcpServers": {
+    "cozi": {
+      "command": "npx",
+      "args": ["-y", "@mjucius/cozi-mcp"],
+      "env": {
+        "COZI_USERNAME": "you@example.com",
+        "COZI_PASSWORD": "your-password"
+      }
+    }
+  }
+}
 ```
 
-2. Install dependencies:
-```bash
-uv sync
-```
+Requires Node 20+. The package will be downloaded on first run.
 
-3. Start the development playground:
-```bash
-uv run playground
-```
+## Trust and Security
 
-## Usage
+Cozi has no OAuth — username/password authentication is the only way the API supports. This server handles that fact honestly:
 
-### Cloud Deployment (Smithery.ai)
+- **Per-user, by architecture.** Each user runs their own instance against their own Cozi account. There is no shared backend, no proxy, no multi-tenant database. The author of this server never sees anyone's credentials or data.
+- **Credentials live only in your MCP client's secure config.** Claude Desktop stores them in your OS keychain. Smithery encrypts them per-session. The npx path reads them from environment variables you set yourself. Nothing is logged, written to disk by this server, or sent anywhere except `https://rest.cozi.com`.
+- **API surface is constrained.** This server only contacts `rest.cozi.com` for the same endpoints the Cozi web app uses (auth, lists, calendar, family members). The full request/response code lives in `src/cozi/` — about 500 lines of TypeScript you can audit yourself.
+- **Open source, MIT licensed.** Pin a specific version (`@mjucius/cozi-mcp@2.0.0`) if you want a stable target, or fork the repo and run your own build if you want zero supply-chain trust.
 
-Once deployed on Smithery.ai, your MCP server runs in the cloud and can be accessed by any MCP-compatible AI assistant using the provided endpoint URL.
+## Tools
 
-### Local Development & Testing
+The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omitted.
 
-Test the server locally with the interactive playground:
-```bash
-# Start the interactive playground
-uv run playground
+### Family
 
-# Or start development server
-uv run dev
-```
+- `family_members()` → `[{id, name, color?}]` — call this first to get attendee IDs for appointments.
 
-The playground provides a web interface to test all MCP tools with real-time responses and debugging information.
+### Lists
 
-### Integration with AI Assistants
+- `get_lists(list_type?)` → `[{id, title, type, item_count, completed_count}]` — `list_type` is optional, `'shopping'` or `'todo'`.
+- `get_list_items(list_id, include_completed=false)` → `[{id, text, status, position?}]`.
+- `create_list(name, list_type)` → `{id, title, type}`.
+- `delete_list(list_id)` → `boolean`.
 
-The easiest way to integrate this MCP server is through the [Smithery.ai server page](https://smithery.ai/server/@mjucius/cozi_mcp), which provides step-by-step instructions for your specific AI assistant.
+### Items
 
-For advanced users doing local development, the server can be run locally using the stdio interface.
+- `add_item(list_id, text, position=0)` → `{id, text}`.
+- `update_item(list_id, item_id, text?, completed?)` → `{id, text, status}` — pass either or both. **Non-atomic when both are passed**: the text is updated first, then the status.
+- `remove_items(list_id, item_ids)` → `boolean`.
+
+### Calendar
+
+- `get_calendar(year, month)` → `[{id, subject, day, all_day, start?, end?, attendees?, location?, notes?}]`.
+- `create_appointment(subject, start, end, attendees?, all_day=false, notes='', location?)` — `start` and `end` are ISO datetimes (e.g. `'2026-06-15T10:00:00'`). For all-day events `end` may equal `start`.
+- `update_appointment(appointment_id, year, month, ...)` — partial update via fetch-then-merge: pass `(appointment_id, year, month)` plus any fields to change. Omitted fields are preserved. To switch a timed appointment to all-day pass `all_day=true`; to switch to timed pass new `start`/`end`.
+- `delete_appointment(appointment_id, year, month)` → `boolean`.
+
+### Workflow tip
+
+When creating or updating appointments with specific attendees, call `family_members()` first and use those `id` values in the `attendees` arg. Calendar tools are scoped to a `(year, month)` page — pass the same `year`/`month` back when updating or deleting an appointment from that page.
+
+## Migration from v1 (Python)
+
+v2.0 is a Node/TypeScript rewrite of the previous Python implementation, distributed as MCPB / npx / Smithery. The runtime changed AND the tool surface was consolidated — if you have prompts written against v1, update them as follows:
+
+| v1 (Python, 14 tools) | v2 (Node, 12 tools) |
+|---|---|
+| `get_family_members` | `family_members` |
+| `get_lists_by_type(t)` | `get_lists(list_type=t)` |
+| `update_item_text(...)` + `mark_item(...)` | `update_item(text?, completed?)` (merged) |
+| `add_item(list_id, item_text, ...)` | `add_item(list_id, text, ...)` (param renamed) |
+| `update_appointment(appointment_obj)` | `update_appointment(appointment_id, year, month, ...partial)` |
+| `update_list` (item reordering) | removed |
+| `delete_appointment(id)` | `delete_appointment(id, year, month)` |
+| `get_lists` returned nested items | now summary only — fetch items via `get_list_items(list_id)` |
+
+The legacy v1 Python source is preserved at git tag [`v1.0.0`](https://github.com/mjucius/cozi_mcp/releases/tag/v1.0.0) for reference.
 
 ## Development
 
-### Requirements
-- Python 3.10+
-- Cozi Family Organizer account
-- uv (recommended) or pip
+Requires Node 20+ (see `.nvmrc`).
 
-### Dependencies
-- `mcp>=1.0.0` - Model Context Protocol framework
-- `py-cozi-client>=1.3.0` - Cozi API client library
-- `smithery` - Smithery.ai deployment framework
-
-### Development Setup
-
-1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/cozi-mcp.git
-cd cozi-mcp
+nvm use
+npm install
+npm test               # vitest, 68 tests
+npm run typecheck
+npm run build          # tsup → dist/
+npm run dev            # local stdio dev with COZI_USERNAME / COZI_PASSWORD env vars
+npm run playground     # @smithery/cli local playground UI
+npm run bundle:mcpb    # produces cozi-mcp.mcpb at repo root
 ```
 
-2. Install dependencies:
-```bash
-# With uv (recommended)
-uv sync
-
-# Or with pip
-pip install -e .
-```
-
-3. Start the development playground:
-```bash
-uv run playground
-```
-
-### Project Structure
+The repo layout:
 
 ```
-cozi-mcp/
-├── smithery.yaml              # Smithery.ai deployment config
-├── pyproject.toml             # Project dependencies and metadata  
+cozi_mcp/
 ├── src/
-│   └── cozi_mcp/
-│       ├── __init__.py       # Package exports
-│       └── server.py         # MCP server implementation
-└── [other files...]
+│   ├── server.ts              # MCP server factory (Smithery default export)
+│   ├── bin.ts                 # npx + MCPB stdio entry point
+│   ├── instructions.ts
+│   ├── cozi/                  # Inlined Cozi HTTP client (no separate npm package)
+│   └── tools/                 # 12 MCP tools
+├── tests/                     # vitest, mocks CoziClient at the boundary
+├── manifest.json              # MCPB manifest (Claude Desktop)
+├── smithery.yaml              # Smithery deploy manifest
+└── package.json
 ```
 
-## Available MCP Tools
-
-The server exposes these tools for AI assistants:
-
-### Family Management
-- `get_family_members` - Get all family members in the account
-
-### List Management  
-- `get_lists` - Get all lists (shopping and todo)
-- `get_lists_by_type` - Filter lists by type (shopping/todo)  
-- `create_list` - Create new lists
-- `delete_list` - Delete existing lists
-
-### Item Management
-- `add_item` - Add items to lists
-- `update_item_text` - Update item text
-- `mark_item` - Mark items complete/incomplete
-- `remove_items` - Remove items from lists
-
-### Calendar Management
-- `get_calendar` - Get appointments for a specific month
-- `create_appointment` - Create new calendar appointments
-- `update_appointment` - Update existing appointments  
-- `delete_appointment` - Delete appointments
-
-## Architecture
-
-This MCP server is built using:
-- **FastMCP** - Simplified MCP server framework  
-- **Smithery.ai** - Cloud deployment and credential management
-- **py-cozi-client** - Python client library for Cozi's API
-- **Pydantic models** - All API responses use structured data models
-
-The server maintains a single authenticated session with Cozi and exposes all functionality through the MCP protocol. When deployed on Smithery.ai, credentials are securely managed through the platform's configuration system.
+The Cozi HTTP client is inlined under `src/cozi/` rather than published as a separate npm package — it's small, only useful for this MCP server, and avoids the supply-chain surface area of a separate dependency. If you'd prefer the Python equivalent for your own projects, see [py-cozi-client](https://github.com/mjucius/py-cozi-client).
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+PRs welcome. Please run `npm test` and `npm run typecheck` before submitting.

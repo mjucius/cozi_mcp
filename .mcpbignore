@@ -1,0 +1,52 @@
+# Source / build inputs (we ship the bundled dist/* only)
+src/
+tests/
+scripts/
+
+# Claude Code project state
+.claude/
+
+# Node toolchain (deps are bundled into dist/* via tsup)
+node_modules/
+package-lock.json
+
+# Dev configs
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
+.nvmrc
+.npmignore
+.gitignore
+
+# Smithery / CI
+smithery.yaml
+.github/
+
+# Legacy Python (will be removed in task 10; ignore here as belt-and-suspenders)
+src/cozi_mcp/
+__pycache__/
+*.egg-info/
+*.pyc
+pyproject.toml
+uv.lock
+.venv/
+.coverage
+.pytest_cache/
+
+# Secrets and local files
+*.env
+creds.env
+*.mcpb
+coverage/
+.tsbuildinfo
+.DS_Store
+
+# Sourcemaps (optional — Claude Desktop doesn't surface them)
+dist/*.map
+dist/*.d.ts
+
+# server.js is the Smithery entry point — Claude Desktop only loads dist/bin.js
+dist/server.js
+
+# Dev-facing docs (not useful inside the .mcpb to end users)
+CLAUDE.md

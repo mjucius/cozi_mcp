@@ -4,118 +4,99 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python-based MCP (Model Context Protocol) server that exposes Cozi Family Organizer API functionality as tools for AI assistants like Claude Desktop. The server provides comprehensive access to Cozi lists, calendar, and family management features.
+Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calendar) to AI assistants. Distributed three ways: MCPB bundle (drag-and-drop into Claude Desktop), Smithery cloud deployment, and `npx @mjucius/cozi-mcp` for power users.
 
-**🚀 Smithery.ai Deployment Ready**: This project is now configured for deployment on Smithery.ai with proper credential management and cloud deployment capabilities.
+**v2.0 (2026-05)** is a ground-up Node/TypeScript rewrite of the prior Python v1. The runtime changed AND the tool surface was consolidated (14 → 12 tools, slim projections). See `README.md` for the v1→v2 migration table. Legacy Python source is preserved at git tag `v1.0.0`.
 
 ## Development Commands
 
-### Local Development with uv (Recommended for Smithery)
+- `npm install` — install dependencies
+- `npm test` — vitest (68 tests, mocks `CoziClient` at the boundary; no creds needed)
+- `npm run typecheck` — `tsc --noEmit`
+- `npm run build` — tsup → `dist/server.js` + `dist/bin.js`
+- `npm run dev` — local stdio dev (needs `COZI_USERNAME` + `COZI_PASSWORD` env vars)
+- `npm run playground` — `@smithery/cli` local playground UI
+- `npm run bundle:mcpb` — produces `cozi-mcp.mcpb` at repo root
 
-- `uv sync` - Install dependencies and sync virtual environment
-- `uv run playground` - Start interactive Smithery playground for testing tools
-- `uv run dev` - Start development server
-- `pip install -e .` - Alternative: Install the package in development mode
-
-### Legacy Development Commands
-
-Based on the Claude Code permissions configured in `.claude/settings.local.json`:
-
-- `COZI_USERNAME=test COZI_PASSWORD=test python debug_appointment.py` - Debug appointment functionality
-
-## Environment Variables
-
-The MCP server requires these environment variables:
-- `COZI_USERNAME` - Your Cozi account username/email
-- `COZI_PASSWORD` - Your Cozi account password
-
-For testing, use `test` for both values.
+`scripts/smoke.ts` and `scripts/smoke-write.ts` exercise read and write paths against real Cozi (gitignored — read creds from `creds.env` or env vars). Useful sanity checks after changes to the HTTP / Cozi client layer.
 
 ## Architecture
 
-### Core Components
+### Core components
 
-- `src/cozi_mcp/server.py` - FastMCP server implementation with all 13 tool handlers
-- `src/cozi_mcp/__init__.py` - Package initialization and exports
-- `debug_appointment.py` - Debug script for testing appointment functionality
+- `src/server.ts` — `createServer({ config })` factory. Smithery default export. Per-credentials `Map<string, CoziClient>` cache so concurrent sessions stay isolated.
+- `src/bin.ts` — npx + MCPB stdio entry point (`#!/usr/bin/env node`). Reads `COZI_USERNAME`/`COZI_PASSWORD` env vars, instantiates `createServer`, pipes to `StdioServerTransport`.
+- `src/instructions.ts` — `SERVER_INSTRUCTIONS` constant injected into the MCP server.
+- `src/cozi/` — Inlined Cozi HTTP client. **No separate npm package.** Cozi API access lives here.
+  - `client.ts` — `CoziClient` class with 13 methods (auth + list/item/calendar CRUD).
+  - `http.ts` — fetch wrapper with per-client cookie jar, 100ms rate-limit gate, 3-attempt retry/backoff, 401-once-then-reauth.
+  - `models.ts` — Zod schemas with `.transform()` for camelCase↔snake_case wire mapping.
+  - `appointment-payloads.ts` — `toApiCreate/Edit/DeleteFormat()` builders for the three Cozi appointment payload shapes.
+  - `errors.ts` — `CoziError` hierarchy.
+- `src/tools/` — 12 MCP tools. Each tool has a `*Handler` function (directly testable) and a `register*Tool(server, getClient)` registrar.
+  - `projections.ts` — `slimPerson` / `slimListSummary` / `slimItem` / `slimAppt`. **Wire keys are exact strings** (`type`, `item_count`, `all_day` — not `listType`, `itemCount`, `allDay`).
+  - `parsers.ts` — `parseIsoDateTime`, `parseListType`.
 
-### Dependencies
+### Cozi auth quirks (real bugs if you forget)
 
-- `py-cozi-client>=1.2.0` - Published Cozi API client library
-- `mcp>=1.0.0` - Model Context Protocol framework (using FastMCP)
+- Login URL MUST include `?apikey=coziwc|v251_production` query param. Cozi started enforcing this in early 2026 — without it you get 401 with the misleading "browser does not understand how to supply credentials" message regardless of credential validity.
+- All requests need browser-shaped headers: `Origin: https://my.cozi.com`, `Referer: https://my.cozi.com/`, a real Chrome `User-Agent`. Cloudflare in front of `rest.cozi.com` 401s anything that looks like a Node/Python default UA.
+- Auth response: `{accessToken, accountId, expiresIn}`. Send `Authorization: Bearer <accessToken>` on subsequent requests. On 401 mid-session, re-authenticate once and replay.
+- Calendar GET returns `{items: {<itemId>: {...}}}` (a map, not an array). Iterate `Object.entries`.
+- Appointment `notes` and `location` live in `itemDetails.notes` / `itemDetails.location` on the GET response — not at the top level. `parseCalendarItem` hoists them.
+- `createAppointment` doesn't return an ID. Client matches by `day + description` in the response to find the new appointment.
 
-### Available MCP Tools
+## Credentials and security model
 
-The server exposes these tools for AI assistants:
+Each user runs their own instance against their own Cozi account. No multi-tenancy.
 
-**Family Management:**
-- `get_family_members` - Get all family members in the account
+Three credential entry points, same downstream `getClient(username, password)` cache:
 
-**List Management:**
-- `get_lists` - Get all lists (shopping and todo)
-- `get_lists_by_type` - Filter lists by type (shopping/todo)
-- `create_list` - Create new lists
-- `delete_list` - Delete existing lists
+- **MCPB**: Claude Desktop prompts for `user_config.username` / `user_config.password` declared in `manifest.json`. Stored in the OS keychain. Wired to `COZI_USERNAME` / `COZI_PASSWORD` env vars at extension launch.
+- **Smithery**: `smithery.yaml` declares the `configSchema`. Smithery injects per-session config into `createServer({ config })`.
+- **npx**: `bin.ts` reads `COZI_USERNAME` / `COZI_PASSWORD` directly from `process.env`.
 
-**Item Management:**
-- `add_item` - Add items to lists
-- `update_item_text` - Update item text
-- `mark_item` - Mark items complete/incomplete
-- `remove_items` - Remove items from lists
-
-**Calendar Management:**
-- `get_calendar` - Get appointments for a specific month
-- `create_appointment` - Create new calendar appointments
-- `update_appointment` - Update existing appointments
-- `delete_appointment` - Delete appointments
+**Never `console.log`** anywhere in the codebase. Stdio uses stdout for JSON-RPC frames; any stray write corrupts the protocol. Diagnostics → `process.stderr.write(...)` only.
 
 ## Testing
 
-### Local Testing with Smithery Playground
+`npm test` runs vitest. Test layout:
 
-The recommended way to test the MCP server locally:
+- `tests/projections.test.ts` — pure dict-shape tests for the slim helpers (15 tests).
+- `tests/tools-lists.test.ts` — list/item tool handlers with mocked `CoziClient` (17 tests).
+- `tests/tools-calendar.test.ts` — calendar tools, including 9 fetch-then-merge regression tests for `update_appointment` (14 tests).
+- `tests/client-cache.test.ts` — per-credentials `Map` cache (5 tests).
+- `tests/create-server.test.ts` — 12-tool registration smoke (1 test).
+- `tests/errors.test.ts` — error propagation (16 tests).
+- `tests/helpers/factories.ts` — `makePerson` / `makeItem` / `makeList` / `makeAppointment` (mirrors prior `conftest.py` factories).
+- `tests/helpers/mock-client.ts` — `makeMockClient()` returns a stand-in with `vi.fn()` for each method.
+
+68 tests total, ~500ms wall time. No network access required.
+
+## Deployment
+
+### MCPB (.mcpb bundle)
 
 ```bash
-# Install dependencies
-uv sync
-
-# Start interactive playground (opens browser interface)
-uv run playground
+npm run bundle:mcpb            # writes cozi-mcp.mcpb at repo root
+# Drag onto Claude Desktop. Enter credentials in the keychain prompt.
 ```
 
-The playground will:
-- Start the MCP server on `http://127.0.0.1:8081`
-- Open Smithery's interactive testing interface
-- Allow you to test all 13 MCP tools with real-time responses
-- Show validation errors and debug information
+Manifest at `manifest.json` (v0.4 schema). Validate with:
 
-**Note**: The playground will show config validation warnings since no credentials are provided locally. This is expected behavior.
-
-### Legacy Testing
-
-Test appointment functionality:
 ```bash
-COZI_USERNAME=test COZI_PASSWORD=test python debug_appointment.py
+npx -y @anthropic-ai/mcpb validate manifest.json
 ```
 
-## Integration
+### Smithery
 
-### Local Development
-To use this MCP server with Claude Desktop or other MCP clients, configure the client to connect to this server's stdio interface. The server communicates via JSON-RPC over stdin/stdout.
+`smithery.yaml` declares `runtime: typescript`, `target: dist/server.js`. Pushing to `main` on `mjucius/cozi_mcp` triggers Smithery rebuild.
 
-### Smithery.ai Deployment
+### npm (npx)
 
-This project is configured for deployment on Smithery.ai with the following files:
+```bash
+npm publish --access public --dry-run   # confirm tarball is dist/ + README + LICENSE only
+npm publish --access public
+```
 
-- `smithery.yaml` - Runtime configuration (Python)
-- `pyproject.toml` - Dependencies and server configuration pointing to `cozi_mcp.server:create_server`
-- `requirements.txt` - Python dependencies for deployment
-
-#### Deployment Process:
-1. Push this code to GitHub
-2. Connect your GitHub repository to Smithery.ai
-3. Configure the Cozi username and password in Smithery's deployment settings
-4. Deploy via the Smithery dashboard
-
-#### Configuration:
-The server uses Smithery's configuration system to securely manage Cozi credentials. When deployed, users configure their `username` and `password` through Smithery's interface, eliminating the need for environment variables.
+Published as `@mjucius/cozi-mcp`. Verify with `npx -y @mjucius/cozi-mcp` (will fail with helpful error if env vars not set).
