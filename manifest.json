@@ -45,20 +45,7 @@
       "sensitive": true
     }
   },
-  "tools": [
-    { "name": "family_members", "description": "List family members." },
-    { "name": "get_lists", "description": "Summarize all lists. Optionally filter by 'shopping' or 'todo'." },
-    { "name": "get_list_items", "description": "Items in one list. Excludes completed by default." },
-    { "name": "create_list", "description": "Create a list ('shopping' or 'todo')." },
-    { "name": "delete_list", "description": "Delete a list." },
-    { "name": "add_item", "description": "Add an item to a list." },
-    { "name": "update_item", "description": "Update an item's text and/or completion status." },
-    { "name": "remove_items", "description": "Remove items from a list." },
-    { "name": "get_calendar", "description": "Appointments for one month." },
-    { "name": "create_appointment", "description": "Create a calendar appointment." },
-    { "name": "update_appointment", "description": "Partial-update an appointment, preserving fields you don't pass." },
-    { "name": "delete_appointment", "description": "Delete an appointment." }
-  ],
+  "tools_generated": true,
   "compatibility": {
     "claude_desktop": ">=0.10.0",
     "platforms": ["darwin", "win32", "linux"],
