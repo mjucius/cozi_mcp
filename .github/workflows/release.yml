@@ -97,10 +97,16 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm (no-op if NPM_TOKEN unset)
+      - name: Publish to npm (no-op if NPM_TOKEN unset or version already published)
         run: |
           if [ -z "${NODE_AUTH_TOKEN}" ]; then
             echo "NPM_TOKEN secret not set — skipping npm publish"
+            exit 0
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            echo "$NAME@$VERSION is already published — skipping (re-trigger is safe)"
             exit 0
           fi
           npm publish --access public --provenance
