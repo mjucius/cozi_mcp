@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/cozi_mcp_logo.svg" width="128" alt="Cozi MCP logo" />
+</p>
+
 # Cozi MCP Server
 
 An unofficial [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants like Claude read and update your [Cozi Family Organizer](https://www.cozi.com/) lists and calendar.
