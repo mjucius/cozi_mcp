@@ -75,6 +75,9 @@ jobs:
     runs-on: ubuntu-latest
     # Skipped automatically when NPM_TOKEN secret is not set.
     # To enable: Settings → Secrets → Actions → New repository secret named NPM_TOKEN
+    permissions:
+      contents: read
+      id-token: write    # required for `npm publish --provenance`
     steps:
       - name: Checkout
         uses: actions/checkout@v5
