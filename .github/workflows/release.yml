@@ -106,3 +106,27 @@ jobs:
           npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  smithery-publish:
+    name: Publish to Smithery
+    needs: build
+    runs-on: ubuntu-latest
+    # Skipped automatically when SMITHERY_API_KEY secret is not set.
+    # To enable: Settings → Secrets → Actions → New repository secret named SMITHERY_API_KEY
+    steps:
+      - name: Download .mcpb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mcpb-bundle
+
+      - name: Publish to Smithery (no-op if SMITHERY_API_KEY unset)
+        env:
+          SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+        run: |
+          if [ -z "${SMITHERY_API_KEY}" ]; then
+            echo "SMITHERY_API_KEY secret not set — skipping Smithery publish"
+            exit 0
+          fi
+          BUNDLE=$(ls cozi-mcp-*.mcpb | head -1)
+          echo "Publishing $BUNDLE to mjucius/cozi-mcp"
+          npx -y @smithery/cli mcp publish "./$BUNDLE" -n mjucius/cozi-mcp
