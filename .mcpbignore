@@ -22,16 +22,9 @@ vitest.config.ts
 smithery.yaml
 .github/
 
-# Legacy Python (will be removed in task 10; ignore here as belt-and-suspenders)
-src/cozi_mcp/
-__pycache__/
-*.egg-info/
-*.pyc
-pyproject.toml
-uv.lock
-.venv/
-.coverage
-.pytest_cache/
+# Assets: ship only the PNG icon referenced by manifest.json — the SVG is
+# just the source-of-truth for the website / README.
+assets/*.svg
 
 # Secrets and local files
 *.env

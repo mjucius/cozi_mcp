@@ -17,6 +17,7 @@
     "url": "https://github.com/mjucius/cozi_mcp"
   },
   "license": "MIT",
+  "icon": "assets/cozi_mcp_logo.png",
   "keywords": ["cozi", "family", "calendar", "lists", "todo", "shopping"],
   "server": {
     "type": "node",
