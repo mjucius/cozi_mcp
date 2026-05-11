@@ -1,6 +1,6 @@
 {
   "name": "@mjucius/cozi-mcp",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Unofficial MCP server for Cozi Family Organizer (lists + calendar). Distributed as MCPB, on Smithery, and via npx.",
   "license": "MIT",
   "author": {
