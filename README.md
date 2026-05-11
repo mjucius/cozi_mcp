@@ -136,6 +136,15 @@ cozi_mcp/
 
 The Cozi HTTP client is inlined under `src/cozi/` rather than published as a separate npm package — it's small, only useful for this MCP server, and avoids the supply-chain surface area of a separate dependency. If you'd prefer the Python equivalent for your own projects, see [py-cozi-client](https://github.com/mjucius/py-cozi-client).
 
+## Acknowledgments
+
+- The `?apikey=coziwc|v…_production` requirement on the Cozi auth endpoint was reverse-engineered from the live `my.cozi.com` web bundle by [Wetzel402/py-cozi PR #3](https://github.com/Wetzel402/py-cozi/pull/3). Without that discovery, every login attempt from a server environment fails with a misleading 401 regardless of credential validity.
+- Built on the [Model Context Protocol](https://modelcontextprotocol.io) and its [TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) by Anthropic.
+
+## Trademark and affiliation
+
+Cozi and the Cozi logo are trademarks of Cozi Group Inc. This project is unofficial and not affiliated with, endorsed by, or sponsored by Cozi Group Inc. Use of the Cozi API is at your own risk and subject to [Cozi's Terms of Service](https://www.cozi.com/terms-of-service/).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
