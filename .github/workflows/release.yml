@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist, e.g. v2.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build, test, bundle .mcpb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Bundle .mcpb
+        run: npx -y @anthropic-ai/mcpb pack . cozi-mcp-${{ github.event.inputs.tag || github.ref_name }}.mcpb
+
+      - name: Upload .mcpb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcpb-bundle
+          path: cozi-mcp-*.mcpb
+          retention-days: 7
+
+  release:
+    name: Attach .mcpb to GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download .mcpb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mcpb-bundle
+
+      - name: Create / update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: cozi-mcp-*.mcpb
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  npm-publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    # Skipped automatically when NPM_TOKEN secret is not set.
+    # To enable: Settings → Secrets → Actions → New repository secret named NPM_TOKEN
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Setup Node + npm registry
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm (no-op if NPM_TOKEN unset)
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "NPM_TOKEN secret not set — skipping npm publish"
+            exit 0
+          fi
+          npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
