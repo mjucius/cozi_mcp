@@ -4,6 +4,11 @@ import createServer from './server.js';
 
 const username = process.env.COZI_USERNAME ?? '';
 const password = process.env.COZI_PASSWORD ?? '';
+const readOnly = parseBooleanEnv(process.env.COZI_READ_ONLY);
+
+function parseBooleanEnv(value: string | undefined): boolean {
+  return value !== undefined && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
 
 // Don't exit on missing creds — Smithery's registry scanner spins the server
 // up to enumerate tools without auth. Tool calls themselves throw
@@ -16,6 +21,6 @@ if (!username || !password) {
   );
 }
 
-const server = createServer({ config: { username, password } });
+const server = createServer({ config: { username, password, readOnly } });
 const transport = new StdioServerTransport();
 await server.connect(transport);

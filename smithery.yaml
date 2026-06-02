@@ -15,3 +15,8 @@ startCommand:
         title: Cozi password
         description: Your Cozi account password.
         format: password
+      readOnly:
+        type: boolean
+        title: Read-only mode
+        description: Only expose read tools and hide tools that create, update, or delete Cozi data.
+        default: false

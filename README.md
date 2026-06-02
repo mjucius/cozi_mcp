@@ -36,7 +36,8 @@ Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP c
       "args": ["-y", "@mjucius/cozi-mcp"],
       "env": {
         "COZI_USERNAME": "you@example.com",
-        "COZI_PASSWORD": "your-password"
+        "COZI_PASSWORD": "your-password",
+        "COZI_READ_ONLY": "true"
       }
     }
   }
@@ -44,6 +45,11 @@ Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP c
 ```
 
 Requires Node 20+. The package will be downloaded on first run.
+
+Set `COZI_READ_ONLY=true` to expose only read operations. In read-only mode, the server registers
+`family_members`, `get_lists`, `get_list_items`, and `get_calendar`; tools that create, update, or
+delete Cozi data are hidden from MCP clients. Omit the variable, or set it to any value other than
+`1`, `true`, `yes`, or `on`, for the default read-write tool surface.
 
 ## Trust and Security
 
@@ -56,7 +62,8 @@ Cozi has no OAuth — username/password authentication is the only way the API s
 
 ## Tools
 
-The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omitted.
+The server exposes 12 tools by default, or 4 read-only tools when `COZI_READ_ONLY=true` (or
+Smithery/MCPB read-only config) is enabled. Returns are slim dicts with `null`/empty fields omitted.
 
 ### Family
 
@@ -69,11 +76,15 @@ The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omi
 - `create_list(name, list_type)` → `{id, title, type}`.
 - `delete_list(list_id)` → `boolean`.
 
+`create_list` and `delete_list` are hidden in read-only mode.
+
 ### Items
 
 - `add_item(list_id, text, position=0)` → `{id, text}`.
 - `update_item(list_id, item_id, text?, completed?)` → `{id, text, status}` — pass either or both. **Non-atomic when both are passed**: the text is updated first, then the status.
 - `remove_items(list_id, item_ids)` → `boolean`.
+
+All item tools are hidden in read-only mode.
 
 ### Calendar
 
@@ -81,6 +92,8 @@ The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omi
 - `create_appointment(subject, start, end, attendees?, all_day=false, notes='', location?)` — `start` and `end` are ISO datetimes (e.g. `'2026-06-15T10:00:00'`). For all-day events `end` may equal `start`.
 - `update_appointment(appointment_id, year, month, ...)` — partial update via fetch-then-merge: pass `(appointment_id, year, month)` plus any fields to change. Omitted fields are preserved. To switch a timed appointment to all-day pass `all_day=true`; to switch to timed pass new `start`/`end`.
 - `delete_appointment(appointment_id, year, month)` → `boolean`.
+
+`create_appointment`, `update_appointment`, and `delete_appointment` are hidden in read-only mode.
 
 ### Workflow tip
 

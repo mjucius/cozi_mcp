@@ -8,6 +8,7 @@ import {
   type SlimItem,
   type SlimListSummary,
 } from './projections.js';
+import type { ToolAccessMode } from './index.js';
 
 export async function getListsHandler(
   client: CoziClient,
@@ -47,6 +48,7 @@ export async function deleteListHandler(client: CoziClient, listId: string): Pro
 export function registerListTools(
   server: McpServer,
   getClient: () => Promise<CoziClient>,
+  accessMode: ToolAccessMode = 'read-write',
 ): void {
   server.registerTool(
     'get_lists',
@@ -79,6 +81,10 @@ export function registerListTools(
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     },
   );
+
+  if (accessMode === 'read-only') {
+    return;
+  }
 
   server.registerTool(
     'create_list',
