@@ -27,9 +27,14 @@ function parseBooleanEnv(value: string | undefined): boolean {
 // AuthenticationError when getClient() sees empty creds, which is the right
 // moment for the error to surface (the user sees it via their MCP client).
 if (!username || !password) {
+  const missing = [!username ? 'COZI_USERNAME' : null, !password ? 'COZI_PASSWORD' : null].filter(
+    (name): name is string => name !== null,
+  );
   process.stderr.write(
-    'Cozi MCP: COZI_USERNAME and COZI_PASSWORD env vars are not set. ' +
-      'Tools will fail until both are configured.\n',
+    `Cozi MCP: ${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not set. ` +
+      'Every tool call will fail with an authentication error until both are configured ' +
+      'in your MCP client (Claude Desktop: Settings > Extensions > Cozi Family Organizer). ' +
+      'These values are read once at startup, so restart the client after setting them.\n',
   );
 }
 

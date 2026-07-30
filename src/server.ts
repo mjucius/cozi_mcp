@@ -11,6 +11,27 @@ export const configSchema = z.object({
 });
 export type Config = z.infer<typeof configSchema>;
 
+/**
+ * Credentials reach this process through env vars that bin.ts reads once at
+ * startup, so editing them in an MCP client's settings has no effect on a
+ * server that is already running. Every auth failure repeats this, because the
+ * symptom — a password the user just corrected that still fails — otherwise
+ * gives no hint that a restart is the actual fix.
+ */
+const STALE_CREDENTIAL_HINT =
+  'Cozi rejected the credentials this server started with. COZI_USERNAME and ' +
+  'COZI_PASSWORD are read once when the process starts, so if you just changed ' +
+  'them in your MCP client, fully restart that client (quit it, do not just ' +
+  'reload) so this server is respawned with the new values.';
+
+/**
+ * Advertised in the MCP handshake, and asserted against package.json and
+ * manifest.json by tests/version-consistency.test.ts — a release that bumps one
+ * file but not the others fails CI instead of shipping a server that misreports
+ * which build is actually running.
+ */
+export const SERVER_VERSION = '2.1.1';
+
 const clients = new Map<string, { client: CoziClient; authAt: number }>();
 const cacheKey = (username: string, password: string) => `${username}\u0000${password}`;
 
@@ -39,7 +60,10 @@ export async function getClient(username: string, password: string): Promise<Coz
 
   const failure = authFailures.get(username);
   if (failure && Date.now() < failure.lockedUntil) {
-    throw new AuthenticationError('Too many failed login attempts; try again later');
+    const retryInSeconds = Math.ceil((failure.lockedUntil - Date.now()) / 1000);
+    throw new AuthenticationError(
+      `Too many failed login attempts; try again in ${retryInSeconds}s. ${STALE_CREDENTIAL_HINT}`,
+    );
   }
 
   const client = new CoziClient(username, password);
@@ -56,6 +80,19 @@ export async function getClient(username: string, password: string): Promise<Coz
       current.lockedUntil = Date.now() + backoff;
     }
     authFailures.set(username, current);
+
+    // Rejected credentials are by far the most common failure here, and the
+    // bare 'Authentication failed' that http.ts produces sends people looking
+    // in the wrong place. Only the message is rewritten — the status code and
+    // response data carry through untouched, and nothing derived from the
+    // credentials themselves is added to it (VULN-006).
+    if (err instanceof AuthenticationError) {
+      throw new AuthenticationError(
+        `${err.message}. ${STALE_CREDENTIAL_HINT}`,
+        err.statusCode,
+        err.responseData,
+      );
+    }
     throw err;
   }
   authFailures.delete(username);
@@ -70,7 +107,7 @@ export function _resetClientCache(): void {
 
 export default function createServer({ config }: { config: Config }): McpServer {
   const server = new McpServer(
-    { name: 'cozi-mcp', version: '2.1.0' },
+    { name: 'cozi-mcp', version: SERVER_VERSION },
     { instructions: SERVER_INSTRUCTIONS },
   );
   registerCoziTools(

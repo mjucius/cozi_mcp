@@ -41,3 +41,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Local working artifacts
+_to_delete/
+cozi_mcp_VULNHUNT_RESULTS_*/

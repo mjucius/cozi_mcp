@@ -51,6 +51,33 @@ Set `COZI_READ_ONLY=true` to expose only read operations. In read-only mode, the
 delete Cozi data are hidden from MCP clients. Omit the variable, or set it to any value other than
 `1`, `true`, `yes`, or `on`, for the default read-write tool surface.
 
+## Troubleshooting
+
+### Tools fail with "Authentication failed" even after I corrected my password
+
+`COZI_USERNAME` and `COZI_PASSWORD` are read once, when the server process
+starts. Editing them in your MCP client's settings updates the stored config but
+does not reach a server that is already running — it keeps presenting the old
+credentials until it is respawned.
+
+Fully quit and relaunch your MCP client (on macOS, Cmd-Q rather than closing the
+window). Reloading, reconnecting, or toggling the extension off and on is
+usually not enough.
+
+### How do I tell which version is actually running?
+
+The running server advertises its version in the MCP handshake; your client
+displays it (Claude Desktop: Settings > Extensions). That is independent of what
+is in your working tree — installing an MCPB installs whatever is inside the
+`.mcpb` file, which is only as current as the last `npm run bundle:mcpb`. Build
+the bundle immediately before installing it, or install from a GitHub release.
+
+### Repeated failures start returning "Too many failed login attempts"
+
+Five consecutive failed authentications for a username trigger an exponential
+backoff, capped at 15 minutes; the message states the remaining wait. The
+counter lives in process memory, so restarting the client clears it.
+
 ## Trust and Security
 
 Cozi has no OAuth — username/password authentication is the only way the API supports. This server handles that fact honestly:
