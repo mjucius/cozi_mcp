@@ -27,7 +27,8 @@
       "args": ["${__dirname}/dist/bin.js"],
       "env": {
         "COZI_USERNAME": "${user_config.username}",
-        "COZI_PASSWORD": "${user_config.password}"
+        "COZI_PASSWORD": "${user_config.password}",
+        "COZI_READ_ONLY": "${user_config.read_only}"
       }
     }
   },
@@ -44,6 +45,13 @@
       "description": "Your Cozi account password. Stored securely in your OS keychain.",
       "required": true,
       "sensitive": true
+    },
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "Only expose read tools and hide tools that create, update, or delete Cozi data.",
+      "default": false,
+      "required": false
     }
   },
   "tools_generated": true,

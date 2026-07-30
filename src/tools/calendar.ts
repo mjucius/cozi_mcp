@@ -9,6 +9,7 @@ import {
 } from '../cozi/index.js';
 import { parseIsoDateTime } from './parsers.js';
 import { slimAppt, type SlimAppointment } from './projections.js';
+import type { ToolAccessMode } from './index.js';
 
 export async function getCalendarHandler(
   client: CoziClient,
@@ -111,6 +112,7 @@ export async function deleteAppointmentHandler(
 export function registerCalendarTools(
   server: McpServer,
   getClient: () => Promise<CoziClient>,
+  accessMode: ToolAccessMode = 'read-write',
 ): void {
   server.registerTool(
     'get_calendar',
@@ -126,6 +128,10 @@ export function registerCalendarTools(
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
     },
   );
+
+  if (accessMode === 'read-only') {
+    return;
+  }
 
   server.registerTool(
     'create_appointment',
