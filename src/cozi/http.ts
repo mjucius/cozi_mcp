@@ -62,6 +62,22 @@ export interface HttpClientOptions {
 
 export type HttpResponse = Record<string, unknown> | unknown[] | true;
 
+/** A response plus the status code that carried it. See `requestWithStatus`. */
+export interface HttpResponseWithStatus {
+  status: number;
+  body: HttpResponse;
+}
+
+/**
+ * Methods that are safe to replay after a network error or 5xx.
+ *
+ * POST/PUT/PATCH are excluded: Cozi applies them on the server before the
+ * failure surfaces here, so a blind replay can double-apply the write (two
+ * appointments, a duplicated item). Retrying those needs idempotency keys the
+ * API does not offer.
+ */
+const IDEMPOTENT_METHODS = new Set<RequestOptions['method']>(['GET', 'DELETE']);
+
 export class HttpClient {
   readonly baseUrl: string;
   readonly cookies = new CookieJar();
@@ -82,8 +98,22 @@ export class HttpClient {
   }
 
   async request(opts: RequestOptions): Promise<HttpResponse> {
+    return (await this.requestWithStatus(opts)).body;
+  }
+
+  /**
+   * Same as `request`, but also returns the HTTP status.
+   *
+   * Needed where 200 and 201 mean materially different things. Updating a list
+   * item is the case in point: Cozi answers 200 when it updated an existing
+   * item and 201 when the id did not exist and it *created* one instead. The
+   * bodies are identical, so the status is the only way to tell an update from
+   * an accidental insert.
+   */
+  async requestWithStatus(opts: RequestOptions): Promise<HttpResponseWithStatus> {
     const url = this.buildUrl(opts.endpoint, opts.params);
     const requireAuth = opts.requireAuth ?? true;
+    const retriable = IDEMPOTENT_METHODS.has(opts.method);
 
     for (let attempt = 0; attempt < this.retryAttempts; attempt++) {
       await this.gate();
@@ -98,7 +128,7 @@ export class HttpClient {
       try {
         res = await fetch(url, init);
       } catch (err) {
-        if (attempt < this.retryAttempts - 1) {
+        if (retriable && attempt < this.retryAttempts - 1) {
           await sleep(2 ** attempt * 500);
           continue;
         }
@@ -107,10 +137,12 @@ export class HttpClient {
 
       this.cookies.ingest(res.headers);
 
-      if (res.status === 200 || res.status === 201) return (await res.json()) as HttpResponse;
+      if (res.status === 200 || res.status === 201) {
+        return { status: res.status, body: (await res.json()) as HttpResponse };
+      }
       if (res.status === 204) {
         await res.body?.cancel();
-        return true;
+        return { status: 204, body: true };
       }
 
       const body = await this.safeJson(res);
@@ -125,6 +157,8 @@ export class HttpClient {
       if (res.status === 403) throw new PermissionDeniedError('Access forbidden', res.status, body);
       if (res.status === 404) throw new ResourceNotFoundError('Resource not found', res.status, body);
       if (res.status === 429) {
+        // 429 is safe to replay for any method: the request was rejected before
+        // it was applied, so no partial write can have landed.
         if (attempt < this.retryAttempts - 1) {
           await sleep(2 ** attempt * 1000);
           continue;
@@ -132,7 +166,7 @@ export class HttpClient {
         throw new RateLimitError('API rate limit exceeded', res.status, body);
       }
       if (res.status >= 500 && res.status < 600) {
-        if (attempt < this.retryAttempts - 1) {
+        if (retriable && attempt < this.retryAttempts - 1) {
           await sleep(2 ** attempt * 1000);
           continue;
         }

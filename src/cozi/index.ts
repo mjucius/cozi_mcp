@@ -8,6 +8,7 @@ export {
   RateLimitError,
   ResourceNotFoundError,
   ValidationError,
+  WriteVerificationError,
 } from './errors.js';
 export {
   CoziAppointmentSchema,

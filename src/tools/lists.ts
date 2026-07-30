@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { CoziClient, ResourceNotFoundError } from '../cozi/index.js';
+import { ID_RE } from '../cozi/client.js';
 import { parseListType } from './parsers.js';
 import {
   slimItem,
@@ -9,6 +10,7 @@ import {
   type SlimListSummary,
 } from './projections.js';
 import type { ToolAccessMode } from './index.js';
+import { toolResult } from './untrusted.js';
 
 export async function getListsHandler(
   client: CoziClient,
@@ -61,7 +63,7 @@ export function registerListTools(
     },
     async ({ list_type }) => {
       const result = await getListsHandler(await getClient(), list_type);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -72,13 +74,13 @@ export function registerListTools(
       description:
         'Items in one list. Excludes completed items by default. Returns: [{id, text, status, position?}].',
       inputSchema: {
-        list_id: z.string(),
+        list_id: z.string().regex(ID_RE, 'Invalid id format'),
         include_completed: z.boolean().optional(),
       },
     },
     async ({ list_id, include_completed }) => {
       const result = await getListItemsHandler(await getClient(), list_id, include_completed ?? false);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -95,7 +97,7 @@ export function registerListTools(
     },
     async ({ name, list_type }) => {
       const result = await createListHandler(await getClient(), name, list_type);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -104,11 +106,11 @@ export function registerListTools(
     {
       title: 'Delete a list',
       description: 'Delete a list. Returns true on success.',
-      inputSchema: { list_id: z.string() },
+      inputSchema: { list_id: z.string().regex(ID_RE, 'Invalid id format') },
     },
     async ({ list_id }) => {
       const result = await deleteListHandler(await getClient(), list_id);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 }

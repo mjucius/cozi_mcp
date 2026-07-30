@@ -14,9 +14,7 @@ export function registerCoziTools(
 ): void {
   registerFamilyMembersTool(server, getClient);
   registerListTools(server, getClient, accessMode);
-  if (accessMode === 'read-write') {
-    registerItemTools(server, getClient);
-  }
+  registerItemTools(server, getClient, accessMode);
   registerCalendarTools(server, getClient, accessMode);
 }
 
