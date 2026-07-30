@@ -70,7 +70,7 @@ export function _resetClientCache(): void {
 
 export default function createServer({ config }: { config: Config }): McpServer {
   const server = new McpServer(
-    { name: 'cozi-mcp', version: '2.0.0' },
+    { name: 'cozi-mcp', version: '2.1.0' },
     { instructions: SERVER_INSTRUCTIONS },
   );
   registerCoziTools(
