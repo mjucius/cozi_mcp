@@ -36,7 +36,8 @@ Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP c
       "args": ["-y", "@mjucius/cozi-mcp"],
       "env": {
         "COZI_USERNAME": "you@example.com",
-        "COZI_PASSWORD": "your-password"
+        "COZI_PASSWORD": "your-password",
+        "COZI_READ_ONLY": "true"
       }
     }
   }
@@ -44,6 +45,11 @@ Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP c
 ```
 
 Requires Node 20+. The package will be downloaded on first run.
+
+Set `COZI_READ_ONLY=true` to expose only read operations. In read-only mode, the server registers
+`family_members`, `get_lists`, `get_list_items`, and `get_calendar`; tools that create, update, or
+delete Cozi data are hidden from MCP clients. Omit the variable, or set it to any value other than
+`1`, `true`, `yes`, or `on`, for the default read-write tool surface.
 
 ## Trust and Security
 
@@ -54,9 +60,23 @@ Cozi has no OAuth — username/password authentication is the only way the API s
 - **API surface is constrained.** This server only contacts `rest.cozi.com` for the same endpoints the Cozi web app uses (auth, lists, calendar, family members). The full request/response code lives in `src/cozi/` — about 500 lines of TypeScript you can audit yourself.
 - **Open source, MIT licensed.** Pin a specific version (`@mjucius/cozi-mcp@2.0.0`) if you want a stable target, or fork the repo and run your own build if you want zero supply-chain trust.
 
+### Security & trust model
+
+This is a single-user server by design. The Cozi credential holder **is** the principal — there is no separate per-caller authentication gate, because each user runs their own instance against their own Cozi account. Concretely:
+
+- **stdio (npx / MCPB) trusts the local user.** Whoever can launch the process and read the configured `COZI_USERNAME` / `COZI_PASSWORD` (or the OS keychain entry) is treated as the account owner. The trust boundary is your machine and its user account.
+- **The Smithery HTTP deployment trusts the session-config credentials as the principal.** Whoever supplies valid Cozi credentials in the session config is the authenticated user for that session. There is no additional login layer.
+- **No multi-tenancy.** Each user configures their own instance with their own Cozi account. There is no shared backend, no tenant isolation to breach, and no per-caller authentication beyond possession of valid Cozi credentials — which is the same access model as the Cozi web app itself.
+
+Two defensive measures narrow the blast radius of that model:
+
+- **Time-bounded credential cache.** Authenticated clients are cached only for a bounded lifetime, so a rotated or revoked Cozi password stops working rather than being honored indefinitely from a stale cached session.
+- **Failed-login rate limiting.** Repeated failed authentication attempts are rate-limited to blunt credential-guessing against the Cozi endpoint.
+
 ## Tools
 
-The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omitted.
+The server exposes 12 tools by default, or 4 read-only tools when `COZI_READ_ONLY=true` (or
+Smithery/MCPB read-only config) is enabled. Returns are slim dicts with `null`/empty fields omitted.
 
 ### Family
 
@@ -69,11 +89,15 @@ The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omi
 - `create_list(name, list_type)` → `{id, title, type}`.
 - `delete_list(list_id)` → `boolean`.
 
+`create_list` and `delete_list` are hidden in read-only mode.
+
 ### Items
 
 - `add_item(list_id, text, position=0)` → `{id, text}`.
 - `update_item(list_id, item_id, text?, completed?)` → `{id, text, status}` — pass either or both. **Non-atomic when both are passed**: the text is updated first, then the status.
 - `remove_items(list_id, item_ids)` → `boolean`.
+
+All item tools are hidden in read-only mode.
 
 ### Calendar
 
@@ -81,6 +105,8 @@ The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omi
 - `create_appointment(subject, start, end, attendees?, all_day=false, notes='', location?)` — `start` and `end` are ISO datetimes (e.g. `'2026-06-15T10:00:00'`). For all-day events `end` may equal `start`.
 - `update_appointment(appointment_id, year, month, ...)` — partial update via fetch-then-merge: pass `(appointment_id, year, month)` plus any fields to change. Omitted fields are preserved. To switch a timed appointment to all-day pass `all_day=true`; to switch to timed pass new `start`/`end`.
 - `delete_appointment(appointment_id, year, month)` → `boolean`.
+
+`create_appointment`, `update_appointment`, and `delete_appointment` are hidden in read-only mode.
 
 ### Workflow tip
 

@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "cozi-mcp",
   "display_name": "Cozi Family Organizer",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Manage your Cozi lists, calendar, and family members from your AI assistant.",
   "long_description": "Unofficial MCP server for the Cozi Family Organizer. Lets your AI assistant read and update your shared shopping lists, to-do lists, and family calendar. Your Cozi credentials are stored in your OS keychain by Claude Desktop and never leave your machine — the author of this extension never sees your data.",
   "author": {
@@ -27,7 +27,8 @@
       "args": ["${__dirname}/dist/bin.js"],
       "env": {
         "COZI_USERNAME": "${user_config.username}",
-        "COZI_PASSWORD": "${user_config.password}"
+        "COZI_PASSWORD": "${user_config.password}",
+        "COZI_READ_ONLY": "${user_config.read_only}"
       }
     }
   },
@@ -44,6 +45,13 @@
       "description": "Your Cozi account password. Stored securely in your OS keychain.",
       "required": true,
       "sensitive": true
+    },
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "Only expose read tools and hide tools that create, update, or delete Cozi data.",
+      "default": false,
+      "required": false
     }
   },
   "tools_generated": true,

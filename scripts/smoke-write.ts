@@ -6,7 +6,7 @@
 // colliding with real data. Cleans up after itself. Run with:
 //   set -a && . creds.env && set +a && npx tsx scripts/smoke-write.ts
 
-import { CoziClient } from '../src/cozi/index.js';
+import { CoziClient, type CoziAppointment } from '../src/cozi/index.js';
 import {
   createAppointmentHandler,
   deleteAppointmentHandler,
@@ -120,5 +120,133 @@ console.error(`✓ delete_appointment → ${deleted}`);
 const pageAfter = await getCalendarHandler(client, FAR_YEAR, FAR_MONTH);
 if (pageAfter.some((a) => a.id === apptId)) throw new Error('Appointment still present after delete');
 console.error(`✓ get_calendar confirms deletion\n`);
+
+// ---------- RECURRENCE PRESERVATION (VULN-005) ----------
+// Fully self-contained: creates its own recurring appointment, verifies it, edits an
+// unrelated field through the real update_appointment path, verifies the recurrence
+// rule survived, then deletes it.
+//
+// Creating a recurring appointment needs a payload shape the CoziClient does not
+// expose (the MCP tool surface has no recurrence support), so the fixture is built
+// with a direct POST. Shape captured from the real Cozi web client on 2026-07-24:
+//   { itemType:"appointment", create: { startDay, recurrence: { rules:[...] }, details:{...} } }
+// recurrence sits at the CREATE level, as a sibling of details — not inside it.
+console.error('--- Recurrence preservation (VULN-005) ---');
+
+const REC_SUBJECT = 'MIGRATION_SMOKE_TEST_RECURRING_DELETE_ME';
+const REC_YEAR = 2026;
+const REC_MONTH = 12;
+const REC_START = '2026-12-04';
+
+// Key order is not stable across Cozi responses, so compare structurally.
+const stable = (v: unknown): string => {
+  const norm = (x: unknown): unknown =>
+    Array.isArray(x)
+      ? x.map(norm)
+      : x && typeof x === 'object'
+        ? Object.fromEntries(
+            Object.entries(x as Record<string, unknown>)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, val]) => [k, norm(val)]),
+          )
+        : x;
+  return JSON.stringify(norm(v));
+};
+
+// Minimal direct-POST helper, used only to build the recurring fixture.
+const BROWSER_HEADERS = {
+  'Content-Type': 'application/json',
+  Origin: 'https://my.cozi.com',
+  Referer: 'https://my.cozi.com/',
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+};
+const login = (await (
+  await fetch('https://rest.cozi.com/api/ext/2207/auth/login?apikey=coziwc%7Cv251_production', {
+    method: 'POST',
+    headers: BROWSER_HEADERS,
+    body: JSON.stringify({ username, password, issueRefresh: true }),
+  })
+).json()) as { accessToken: string; accountId: string };
+
+const createRes = await fetch(
+  `https://rest.cozi.com/api/ext/2004/${login.accountId}/calendar/${REC_YEAR}/${REC_MONTH}`,
+  {
+    method: 'POST',
+    headers: { ...BROWSER_HEADERS, Authorization: `Bearer ${login.accessToken}` },
+    body: JSON.stringify([
+      {
+        itemType: 'appointment',
+        create: {
+          startDay: REC_START,
+          recurrence: { rules: [{ interval: 1, frequency: 'Weekly', byDay: ['FR'], end: {} }] },
+          details: {
+            startTime: '09:00',
+            endTime: '09:30',
+            dateSpan: 0,
+            location: 'Smoke Recurrence Loc',
+            notes: 'original recurring notes',
+            subject: REC_SUBJECT,
+          },
+        },
+      },
+    ]),
+  },
+);
+if (!createRes.ok) throw new Error(`Recurring fixture create failed: HTTP ${createRes.status}`);
+
+const recPage = await client.getCalendar(REC_YEAR, REC_MONTH);
+const recAppt = recPage.find((a) => a.subject === REC_SUBJECT);
+if (!recAppt) throw new Error('Recurring fixture was not created (HTTP 200 but nothing persisted)');
+if (recAppt.recurrence == null) throw new Error('Recurring fixture created without a recurrence rule');
+const originalRule = stable(recAppt.recurrence);
+console.error(`✓ created recurring fixture id=${recAppt.id} rules=${JSON.stringify((recAppt.recurrence as { rules?: unknown }).rules)}`);
+
+const REC_PROBE_NOTES = 'recurrence probe — only this field changed';
+await updateAppointmentHandler(client, recAppt.id!, REC_YEAR, REC_MONTH, { notes: REC_PROBE_NOTES });
+
+const recAfter = (await client.getCalendar(REC_YEAR, REC_MONTH)).find((a) => a.id === recAppt.id);
+if (!recAfter) throw new Error('Recurring appointment vanished after an unrelated edit!');
+if (recAfter.notes !== REC_PROBE_NOTES) {
+  throw new Error(`Notes not persisted on recurring appt: got "${recAfter.notes}"`);
+}
+if (recAfter.recurrence == null) {
+  throw new Error('RECURRENCE DESTROYED by an unrelated notes edit — VULN-005 regression!');
+}
+if (stable(recAfter.recurrence) !== originalRule) {
+  throw new Error(
+    `Recurrence rule mutated by an unrelated edit.\n  before: ${originalRule}\n  after:  ${stable(recAfter.recurrence)}`,
+  );
+}
+if (recAfter.subject !== REC_SUBJECT) throw new Error(`subject not preserved: "${recAfter.subject}"`);
+if (recAfter.location !== 'Smoke Recurrence Loc') throw new Error(`location not preserved on recurring appt`);
+console.error('✓ notes edit persisted AND recurrence rule survived intact');
+console.error(`✓ subject/location preserved; recurrenceStartDay=${recAfter.recurrenceStartDay}`);
+
+// Negative check, through the PUBLIC path: an edit Cozi refuses must RAISE rather
+// than report false success. Cozi answers 200 and names the refusal in
+// `rejectedItems`; before write verification this silently "succeeded". Editing a
+// well-formed but non-existent appointment id is refused with
+// "Operation rejected because resource does not exist".
+{
+  const ghost = { ...recAppt, id: '00000000-0000-0000-0000-000000000000' };
+  let threw = false;
+  try {
+    await client.updateAppointment(ghost);
+  } catch {
+    threw = true;
+  }
+  if (!threw) {
+    throw new Error(
+      'An edit Cozi rejects did NOT raise — rejectedItems verification is not working',
+    );
+  }
+  console.error('✓ rejected edit raised instead of reporting false success');
+}
+
+await deleteAppointmentHandler(client, recAppt.id!, REC_YEAR, REC_MONTH);
+const recLeft = (await client.getCalendar(REC_YEAR, REC_MONTH)).filter((a) => a.subject === REC_SUBJECT);
+if (recLeft.length > 0) throw new Error(`${recLeft.length} recurring instance(s) still present after delete`);
+console.error('✓ recurring fixture deleted\n');
 
 console.error('All write paths green ✓');
