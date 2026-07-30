@@ -73,11 +73,12 @@ jobs:
     name: Publish to npm
     needs: build
     runs-on: ubuntu-latest
-    # Skipped automatically when NPM_TOKEN secret is not set.
-    # To enable: Settings → Secrets → Actions → New repository secret named NPM_TOKEN
+    # Publishes via npm Trusted Publishing (OIDC) — no NPM_TOKEN secret needed.
+    # Requires this repo + `release.yml` to be registered as a trusted publisher
+    # for the package at npmjs.com → package settings → Trusted Publisher.
     permissions:
       contents: read
-      id-token: write    # required for `npm publish --provenance`
+      id-token: write    # required for OIDC token exchange and `npm publish --provenance`
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -97,12 +98,17 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm (no-op if NPM_TOKEN unset or version already published)
+      - name: Publish to npm (trusted publisher / OIDC — no-op if version already published)
         run: |
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then
-            echo "NPM_TOKEN secret not set — skipping npm publish"
-            exit 0
-          fi
+          # Uses npm Trusted Publishing (OIDC), not a static token. `id-token: write`
+          # above lets npm CLI exchange a short-lived GitHub OIDC token for a publish
+          # grant, IF npmjs.com has this exact repo + workflow filename configured as
+          # a trusted publisher for this package. A stale/absent auth token in .npmrc
+          # would make npm CLI fall back to classic token auth instead of attempting
+          # OIDC, so strip any auth token this step's environment might otherwise
+          # supply — npm CLI only attempts OIDC when it finds none configured.
+          sed -i '/_authToken=/d' .npmrc || true
+          npm install -g npm@latest
           VERSION=$(node -p "require('./package.json').version")
           NAME=$(node -p "require('./package.json').name")
           if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
@@ -110,8 +116,6 @@ jobs:
             exit 0
           fi
           npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   smithery-publish:
     name: Publish to Smithery
