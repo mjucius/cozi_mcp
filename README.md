@@ -54,6 +54,19 @@ Cozi has no OAuth — username/password authentication is the only way the API s
 - **API surface is constrained.** This server only contacts `rest.cozi.com` for the same endpoints the Cozi web app uses (auth, lists, calendar, family members). The full request/response code lives in `src/cozi/` — about 500 lines of TypeScript you can audit yourself.
 - **Open source, MIT licensed.** Pin a specific version (`@mjucius/cozi-mcp@2.0.0`) if you want a stable target, or fork the repo and run your own build if you want zero supply-chain trust.
 
+### Security & trust model
+
+This is a single-user server by design. The Cozi credential holder **is** the principal — there is no separate per-caller authentication gate, because each user runs their own instance against their own Cozi account. Concretely:
+
+- **stdio (npx / MCPB) trusts the local user.** Whoever can launch the process and read the configured `COZI_USERNAME` / `COZI_PASSWORD` (or the OS keychain entry) is treated as the account owner. The trust boundary is your machine and its user account.
+- **The Smithery HTTP deployment trusts the session-config credentials as the principal.** Whoever supplies valid Cozi credentials in the session config is the authenticated user for that session. There is no additional login layer.
+- **No multi-tenancy.** Each user configures their own instance with their own Cozi account. There is no shared backend, no tenant isolation to breach, and no per-caller authentication beyond possession of valid Cozi credentials — which is the same access model as the Cozi web app itself.
+
+Two defensive measures narrow the blast radius of that model:
+
+- **Time-bounded credential cache.** Authenticated clients are cached only for a bounded lifetime, so a rotated or revoked Cozi password stops working rather than being honored indefinitely from a stale cached session.
+- **Failed-login rate limiting.** Repeated failed authentication attempts are rate-limited to blunt credential-guessing against the Cozi endpoint.
+
 ## Tools
 
 The server exposes 12 tools. Returns are slim dicts with `null`/empty fields omitted.

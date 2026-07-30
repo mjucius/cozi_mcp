@@ -9,9 +9,16 @@ startCommand:
       username:
         type: string
         title: Cozi username
-        description: Your Cozi account email address.
+        description: >-
+          Your Cozi account email address. These credentials are the
+          authentication principal for this session — anyone able to supply
+          them has full access to this Cozi account.
+        format: password
       password:
         type: string
         title: Cozi password
-        description: Your Cozi account password.
+        description: >-
+          Your Cozi account password. These credentials are the authentication
+          principal for this session — possession of valid Cozi credentials is
+          the only access control.
         format: password

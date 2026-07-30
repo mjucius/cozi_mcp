@@ -9,6 +9,7 @@ import {
 } from '../cozi/index.js';
 import { parseIsoDateTime } from './parsers.js';
 import { slimAppt, type SlimAppointment } from './projections.js';
+import { toolResult } from './untrusted.js';
 
 export async function getCalendarHandler(
   client: CoziClient,
@@ -123,7 +124,7 @@ export function registerCalendarTools(
     },
     async ({ year, month }) => {
       const result = await getCalendarHandler(await getClient(), year, month);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -156,7 +157,7 @@ export function registerCalendarTools(
         notes ?? '',
         location,
       );
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -192,7 +193,7 @@ export function registerCalendarTools(
       if (notes !== undefined) fields.notes = notes;
       if (location !== undefined) fields.location = location;
       const result = await updateAppointmentHandler(await getClient(), appointment_id, year, month, fields);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -209,7 +210,7 @@ export function registerCalendarTools(
     },
     async ({ appointment_id, year, month }) => {
       const result = await deleteAppointmentHandler(await getClient(), appointment_id, year, month);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 }

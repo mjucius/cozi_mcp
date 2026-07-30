@@ -1,6 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { CoziClient, type CoziItem, ItemStatus } from '../cozi/index.js';
+import { ID_RE } from '../cozi/client.js';
+import { toolResult } from './untrusted.js';
 
 export async function addItemHandler(
   client: CoziClient,
@@ -52,14 +54,14 @@ export function registerItemTools(
       title: 'Add an item to a list',
       description: 'Add an item to a list. Returns: {id, text}.',
       inputSchema: {
-        list_id: z.string(),
+        list_id: z.string().regex(ID_RE, 'Invalid id format'),
         text: z.string(),
         position: z.number().int().optional(),
       },
     },
     async ({ list_id, text, position }) => {
       const result = await addItemHandler(await getClient(), list_id, text, position ?? 0);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -72,15 +74,15 @@ export function registerItemTools(
         'When both are provided the text is updated first then status is updated as a separate ' +
         'request — these are NOT atomic. Returns: {id, text, status}.',
       inputSchema: {
-        list_id: z.string(),
-        item_id: z.string(),
+        list_id: z.string().regex(ID_RE, 'Invalid id format'),
+        item_id: z.string().regex(ID_RE, 'Invalid id format'),
         text: z.string().optional(),
         completed: z.boolean().optional(),
       },
     },
     async ({ list_id, item_id, text, completed }) => {
       const result = await updateItemHandler(await getClient(), list_id, item_id, text, completed);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 
@@ -89,11 +91,14 @@ export function registerItemTools(
     {
       title: 'Remove items from a list',
       description: 'Remove items from a list. Returns true on success.',
-      inputSchema: { list_id: z.string(), item_ids: z.array(z.string()) },
+      inputSchema: {
+        list_id: z.string().regex(ID_RE, 'Invalid id format'),
+        item_ids: z.array(z.string().regex(ID_RE, 'Invalid id format')),
+      },
     },
     async ({ list_id, item_ids }) => {
       const result = await removeItemsHandler(await getClient(), list_id, item_ids);
-      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+      return toolResult(result);
     },
   );
 }
