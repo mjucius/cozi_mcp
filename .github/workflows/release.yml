@@ -85,12 +85,19 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: Setup Node + npm registry
+      # Node 24, deliberately newer than the build job's Node 20: OIDC trusted
+      # publishing needs npm >= 11.5.1, and Node 20 ships npm 10.8.2.
+      #
+      # `registry-url` is deliberately NOT set here. That input makes setup-node
+      # write an .npmrc containing an `_authToken` line and export a placeholder
+      # NODE_AUTH_TOKEN — and npm CLI only attempts the OIDC exchange when it
+      # finds no token configured, so its presence silently defeats trusted
+      # publishing. registry.npmjs.org is the default registry anyway.
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
         run: npm ci
@@ -100,15 +107,16 @@ jobs:
 
       - name: Publish to npm (trusted publisher / OIDC — no-op if version already published)
         run: |
-          # Uses npm Trusted Publishing (OIDC), not a static token. `id-token: write`
-          # above lets npm CLI exchange a short-lived GitHub OIDC token for a publish
-          # grant, IF npmjs.com has this exact repo + workflow filename configured as
-          # a trusted publisher for this package. A stale/absent auth token in .npmrc
-          # would make npm CLI fall back to classic token auth instead of attempting
-          # OIDC, so strip any auth token this step's environment might otherwise
-          # supply — npm CLI only attempts OIDC when it finds none configured.
-          sed -i '/_authToken=/d' .npmrc || true
-          npm install -g npm@latest
+          # Publishes via npm Trusted Publishing (OIDC). The `id-token: write`
+          # permission above lets npm CLI exchange a short-lived GitHub OIDC token
+          # for a publish grant, given npmjs.com has this repo + workflow filename
+          # registered as a trusted publisher for the package.
+          #
+          # Upgrade npm if a newer one is available, but don't fail the job if the
+          # newest npm doesn't support this Node — Node 24's bundled npm 11.x
+          # already supports OIDC.
+          npm install -g npm@latest || echo "npm upgrade skipped — using bundled npm"
+          echo "node $(node --version) / npm $(npm --version)"
           VERSION=$(node -p "require('./package.json').version")
           NAME=$(node -p "require('./package.json').name")
           if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
