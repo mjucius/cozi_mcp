@@ -14,14 +14,55 @@ permissions:
   contents: write
 
 jobs:
+  # Resolves the tag ONCE for every downstream job and refuses anything that is
+  # not a real version tag.
+  #
+  # Every job used to compute `github.event.inputs.tag || github.ref_name`
+  # independently. On a workflow_dispatch where the `tag` input is empty that
+  # falls back to the *branch* name, so a dispatch from main resolved to "main"
+  # — and softprops/action-gh-release happily created a `main` tag plus a
+  # release literally named "main", which then outranked v2.1.0 as "Latest".
+  # That happened on 2026-07-30 and had to be cleaned up by hand.
+  validate-tag:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - name: Resolve and validate tag
+        id: resolve
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          TAG="${INPUT_TAG:-$REF_NAME}"
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::Refusing to release '$TAG' — expected a version tag such as v2.1.1."
+            echo "If this was a manual run, supply the 'tag' input; an empty input falls back"
+            echo "to the branch name, which would tag and publish a release named '$TAG'."
+            exit 1
+          fi
+
+          if ! git ls-remote --exit-code --tags "$REPO" "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag '$TAG' does not exist in this repository."
+            echo "Create and push it first: git tag $TAG && git push origin $TAG"
+            exit 1
+          fi
+
+          echo "Releasing $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build, test, bundle .mcpb
+    needs: validate-tag
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.validate-tag.outputs.tag }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -42,7 +83,7 @@ jobs:
         run: npm run build
 
       - name: Bundle .mcpb
-        run: npx -y @anthropic-ai/mcpb pack . cozi-mcp-${{ github.event.inputs.tag || github.ref_name }}.mcpb
+        run: npx -y @anthropic-ai/mcpb pack . cozi-mcp-${{ needs.validate-tag.outputs.tag }}.mcpb
 
       - name: Upload .mcpb artifact
         uses: actions/upload-artifact@v4
@@ -53,7 +94,7 @@ jobs:
 
   release:
     name: Attach .mcpb to GitHub Release
-    needs: build
+    needs: [validate-tag, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download .mcpb artifact
@@ -64,14 +105,14 @@ jobs:
       - name: Create / update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.validate-tag.outputs.tag }}
           files: cozi-mcp-*.mcpb
           generate_release_notes: true
           fail_on_unmatched_files: true
 
   npm-publish:
     name: Publish to npm
-    needs: build
+    needs: [validate-tag, build]
     runs-on: ubuntu-latest
     # Publishes via npm Trusted Publishing (OIDC) — no NPM_TOKEN secret needed.
     # Requires this repo + `release.yml` to be registered as a trusted publisher
@@ -83,7 +124,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ needs.validate-tag.outputs.tag }}
 
       # Node 24, deliberately newer than the build job's Node 20: OIDC trusted
       # publishing needs npm >= 11.5.1, and Node 20 ships npm 10.8.2.
