@@ -4,6 +4,61 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-09-08
+
+Multi-day appointments now work end to end. Two defects were fixed: the one
+reported in #8, and a second, pre-existing one found while verifying it.
+
+### Fixed
+
+- **`create_appointment` no longer drops the end date on multi-day events**
+  ([#8](https://github.com/mjucius/cozi_mcp/issues/8)). The handler parsed `end`
+  and then used only its *time* component — the end **date** was discarded
+  outright, so an event spanning several days was created as a single-day event
+  and the call still returned success. Nothing surfaced the loss unless you
+  re-opened the event in the Cozi app. `update_appointment` had the identical
+  defect. Both now derive Cozi's `dateSpan` from the supplied range.
+- **`get_calendar` no longer collapses a multi-day event's end onto its start
+  day.** The projection bound the reported `end` to `startDay`, so even an event
+  created in the Cozi app was misreported. This is why the tool result echoed the
+  wrong end date straight back at the caller.
+- **All-day appointments could never be created.** Every `all_day=true` create
+  and every switch-to-all-day edit was rejected by Cozi with `Operation rejected
+  due to request data problem. Detail: start_time and end_time are required` —
+  the payload builders sent `null` times, which Cozi refuses. An all-day event is
+  stored as `00:00:00`/`00:00:00`, which the read path already coerces back to
+  `null`. Pre-existing, unrelated to #8, and fixed here because vacations — the
+  dominant multi-day case — are all-day.
+- **An `end` before its `start` is now rejected** with a `ValidationError` raised
+  before any network call, instead of being silently mangled. An `endTime`
+  earlier than `startTime` *across* days stays legal, because real events do that
+  — a trip leaving at 17:00 and returning at 15:00 eight days later.
+
+### Added
+
+- **`end_day` in the calendar tool output.** Present only on multi-day events. It
+  is the sole span signal available for an all-day multi-day event, which carries
+  no times at all. `get_calendar` now returns
+  `[{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?}]`.
+- **`scripts/smoke-multiday.ts`**, a live round-trip covering the issue's exact
+  repro, shrinking and growing a span, a single-day control, and a cross-month
+  all-day span. Cleans up after itself.
+
+### Notes on the wire format
+
+`dateSpan` is an **inclusive** day count, not a count of extra days. Established
+by probing a live account read-only across 24 months and 782 appointments:
+one-day holidays carry `dateSpan: 1`, a Feb 7 → Feb 15 trip carries 9, a
+Jul 14 → Aug 4 summer camp carries 22, and 658 ordinary same-day events omit the
+field entirely. So `endDay = startDay + max(dateSpan, 1) - 1`. A spanning event
+is returned by the calendar GET for *every* month it overlaps, always keyed with
+`day` = its start day — so `day` may fall outside the month you asked for.
+
+Two changes are visible on the wire but not in the tool surface: every create and
+edit now sends `dateSpan >= 1` rather than `0` (a bare `0` is ambiguous on a
+full-replace edit when shrinking a span back to one day), and all-day writes send
+`00:00`/`00:00` rather than `null`.
+
 ## [2.1.1] - 2026-07-30
 
 Diagnostics only — no change to the tool surface, the wire format, or the
