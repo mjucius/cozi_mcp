@@ -128,9 +128,9 @@ All item tools are hidden in read-only mode.
 
 ### Calendar
 
-- `get_calendar(year, month)` → `[{id, subject, day, all_day, start?, end?, attendees?, location?, notes?}]`.
-- `create_appointment(subject, start, end, attendees?, all_day=false, notes='', location?)` — `start` and `end` are ISO datetimes (e.g. `'2026-06-15T10:00:00'`). For all-day events `end` may equal `start`.
-- `update_appointment(appointment_id, year, month, ...)` — partial update via fetch-then-merge: pass `(appointment_id, year, month)` plus any fields to change. Omitted fields are preserved. To switch a timed appointment to all-day pass `all_day=true`; to switch to timed pass new `start`/`end`.
+- `get_calendar(year, month)` → `[{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?}]`. `day` is always the start day; `end_day` appears only on multi-day events, which Cozi lists in every month they overlap (so `day` may fall outside the month you asked for).
+- `create_appointment(subject, start, end, attendees?, all_day=false, notes='', location?)` — `start` and `end` are ISO datetimes (e.g. `'2026-06-15T10:00:00'`). For all-day events `end` may equal `start`. Put `end` on a later date for a multi-day event; the result reports the span as `end_day`. An `end` before `start` is an error.
+- `update_appointment(appointment_id, year, month, ...)` — partial update via fetch-then-merge: pass `(appointment_id, year, month)` plus any fields to change. Omitted fields are preserved. To switch a timed appointment to all-day pass `all_day=true`; to switch to timed pass new `start`/`end`. Passing `end` re-spans the event against its (possibly newly set) start day, so an `end` on a later date makes it multi-day and one on the start day collapses it back; passing `start` alone moves the event and keeps its length.
 - `delete_appointment(appointment_id, year, month)` → `boolean`.
 
 `create_appointment`, `update_appointment`, and `delete_appointment` are hidden in read-only mode.

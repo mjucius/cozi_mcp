@@ -11,14 +11,14 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 ## Development Commands
 
 - `npm install` — install dependencies
-- `npm test` — vitest (68 tests, mocks `CoziClient` at the boundary; no creds needed)
+- `npm test` — vitest (136 tests, mocks `CoziClient` at the boundary; no creds needed)
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — tsup → `dist/server.js` + `dist/bin.js`
 - `npm run dev` — local stdio dev (needs `COZI_USERNAME` + `COZI_PASSWORD` env vars)
 - `npm run playground` — `@smithery/cli` local playground UI
 - `npm run bundle:mcpb` — produces `cozi-mcp.mcpb` at repo root
 
-`scripts/smoke.ts` and `scripts/smoke-write.ts` exercise read and write paths against real Cozi (gitignored — read creds from `creds.env` or env vars). Useful sanity checks after changes to the HTTP / Cozi client layer.
+`scripts/smoke.ts`, `scripts/smoke-write.ts` and `scripts/smoke-multiday.ts` exercise read, write and multi-day/all-day paths against real Cozi (read creds from `creds.env` or env vars; each cleans up after itself). Useful sanity checks after changes to the HTTP / Cozi client layer.
 
 ## Architecture
 
@@ -45,6 +45,8 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 - Calendar GET returns `{items: {<itemId>: {...}}}` (a map, not an array). Iterate `Object.entries`.
 - Appointment `notes` and `location` live in `itemDetails.notes` / `itemDetails.location` on the GET response — not at the top level. `parseCalendarItem` hoists them.
 - `createAppointment` doesn't return an ID. Client matches by `day + description` in the response to find the new appointment.
+- Multi-day events are expressed by top-level `dateSpan`, an **inclusive** day count (1 = single day; the field is simply absent on most one-day events, which parses to 0). `endDay = startDay + max(dateSpan, 1) - 1`. Confirmed against 782 live appointments: one-day holidays carry `dateSpan: 1`. A spanning event is returned by the GET for *every* month it overlaps, always keyed with `day` = its start day. Do not confuse this with `endDay`, which is the recurring-series end nested in `recurrence`.
+- All-day appointments must be written as `startTime`/`endTime` of `"00:00"`, never `null` — Cozi rejects a null with *"start_time and end_time are required"*. The read path coerces the stored `00:00:00` pair back to `null`.
 
 ## Credentials and security model
 
@@ -71,7 +73,7 @@ Three credential entry points, same downstream `getClient(username, password)` c
 - `tests/helpers/factories.ts` — `makePerson` / `makeItem` / `makeList` / `makeAppointment` (mirrors prior `conftest.py` factories).
 - `tests/helpers/mock-client.ts` — `makeMockClient()` returns a stand-in with `vi.fn()` for each method.
 
-68 tests total, ~500ms wall time. No network access required.
+136 tests total, ~1s wall time. (The per-file counts above predate several additions — `npm test` is the source of truth.) No network access required.
 
 ## Deployment
 

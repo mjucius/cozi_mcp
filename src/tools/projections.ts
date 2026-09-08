@@ -4,6 +4,7 @@ import {
   CoziList,
   CoziPerson,
   formatTimeOfDay,
+  spanEndDay,
 } from '../cozi/index.js';
 
 export interface SlimPerson {
@@ -34,6 +35,8 @@ export interface SlimAppointment {
   all_day: boolean;
   start?: string;
   end?: string;
+  /** Last day a multi-day event covers. Omitted for ordinary single-day events. */
+  end_day?: string;
   attendees?: string[];
   location?: string;
   notes?: string;
@@ -69,6 +72,9 @@ export function slimItem(i: CoziItem): SlimItem {
 
 export function slimAppt(a: CoziAppointment): SlimAppointment {
   const day = a.startDay;
+  // A multi-day event ends on day + dateSpan - 1, not on its start day. Binding `end`
+  // to `day` is what made get_calendar echo a collapsed end date back (issue #8).
+  const endDay = spanEndDay(day, a.dateSpan);
   const out: SlimAppointment = {
     id: a.id ?? '',
     subject: a.subject,
@@ -76,7 +82,9 @@ export function slimAppt(a: CoziAppointment): SlimAppointment {
     all_day: a.startTime == null,
   };
   if (a.startTime) out.start = `${day}T${formatTimeOfDay(a.startTime)}`;
-  if (a.endTime) out.end = `${day}T${formatTimeOfDay(a.endTime)}`;
+  if (a.endTime) out.end = `${endDay}T${formatTimeOfDay(a.endTime)}`;
+  // The only span signal available for an all-day multi-day event, which carries no times.
+  if (endDay !== day) out.end_day = endDay;
   if (a.attendees && a.attendees.length) out.attendees = [...a.attendees];
   if (a.location) out.location = a.location;
   if (a.notes) out.notes = a.notes;

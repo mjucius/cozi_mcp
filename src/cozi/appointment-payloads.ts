@@ -1,7 +1,18 @@
 import { ValidationError } from './errors.js';
 import { CoziAppointment, formatTimeOfDay } from './models.js';
 
-const time = (t: CoziAppointment['startTime']): string | null => (t ? formatTimeOfDay(t) : null);
+// An all-day appointment is stored by Cozi as 00:00:00/00:00:00, not as null times —
+// `parseTimeFromCalendar` in client.ts coerces that pair back to null on read. Sending a
+// literal null is refused outright: "Operation rejected due to request data problem.
+// Detail: start_time and end_time are required" (verified against live Cozi 2026-09-08),
+// which meant every all_day=true create and every switch-to-all-day edit failed.
+const time = (t: CoziAppointment['startTime']): string => (t ? formatTimeOfDay(t) : '00:00');
+
+// Cozi's `dateSpan` is an inclusive day count (1 = single day); the field is simply absent
+// on most single-day events, which parses to 0 here. Always send at least 1 rather than a
+// bare 0: an edit is a FULL REPLACE, so shrinking a multi-day event back to one day has to
+// carry a positive single-day value, and 1 is what Cozi itself stores for one-day events.
+const span = (dateSpan: number): number => Math.max(dateSpan, 1);
 
 export function toApiCreateFormat(a: CoziAppointment): Record<string, unknown> {
   return {
@@ -11,7 +22,7 @@ export function toApiCreateFormat(a: CoziAppointment): Record<string, unknown> {
       details: {
         startTime: time(a.startTime),
         endTime: time(a.endTime),
-        dateSpan: a.dateSpan,
+        dateSpan: span(a.dateSpan),
         attendeeSet: a.attendees,
         location: a.location,
         notes: a.notes,
@@ -54,7 +65,7 @@ export function toApiEditFormat(a: CoziAppointment): Record<string, unknown> {
       details: {
         startTime: time(a.startTime),
         endTime: time(a.endTime),
-        dateSpan: a.dateSpan,
+        dateSpan: span(a.dateSpan),
         attendeeSet: a.attendees,
         subject: a.subject,
         location: a.location,

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { ValidationError } from './errors.js';
+
 export const ListType = { SHOPPING: 'shopping', TODO: 'todo' } as const;
 export type ListType = (typeof ListType)[keyof typeof ListType];
 export const ListTypeSchema = z.enum(['shopping', 'todo']);
@@ -35,6 +37,43 @@ const todayCalendarDate = (): CalendarDate => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 };
+
+// Cozi's `dateSpan` is an INCLUSIVE day count, not a count of extra days: a one-day event
+// is 1, and the field is usually omitted entirely on the wire (which parses to 0 here).
+//
+// Verified against 782 live appointments 2026-09-08: one-day holidays ("New Year's Day",
+// "Thanksgiving Day", "Christmas Day") carry dateSpan 1, while a Feb 7 -> Feb 15 trip
+// carries 9 and a Jul 14 -> Aug 4 summer camp carries 22. 658 ordinary same-day events
+// carry no dateSpan at all. So 0 and 1 both mean "single day".
+//
+// Day arithmetic is done in UTC so a DST transition can never shift a result by a day.
+const DAY_MS = 86_400_000;
+
+const calendarDateToUtcMs = (d: CalendarDate): number => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  if (!m) throw new ValidationError(`Invalid calendar date: ${JSON.stringify(d)}`);
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+};
+
+const utcMsToCalendarDate = (ms: number): CalendarDate => {
+  const d = new Date(ms);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+};
+
+/** Last day an appointment covers, given its start day and Cozi `dateSpan`. */
+export function spanEndDay(startDay: CalendarDate, dateSpan: number): CalendarDate {
+  const span = Math.max(Number.isFinite(dateSpan) ? dateSpan : 0, 1);
+  return utcMsToCalendarDate(calendarDateToUtcMs(startDay) + (span - 1) * DAY_MS);
+}
+
+/** Cozi `dateSpan` for an inclusive [startDay, endDay] range. Same-day yields 1. */
+export function dateSpanFromRange(startDay: CalendarDate, endDay: CalendarDate): number {
+  const diff = (calendarDateToUtcMs(endDay) - calendarDateToUtcMs(startDay)) / DAY_MS;
+  return Math.max(Math.round(diff), 0) + 1;
+}
 
 const parseTimeOfDay = (v: unknown): TimeOfDay | null => {
   if (v == null) return null;

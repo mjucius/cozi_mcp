@@ -3,7 +3,10 @@ import { z } from 'zod';
 import {
   CoziClient,
   ResourceNotFoundError,
+  ValidationError,
+  dateSpanFromRange,
   makeAppointment,
+  type CalendarDate,
   type CoziAppointment,
   type TimeOfDay,
 } from '../cozi/index.js';
@@ -21,6 +24,31 @@ export async function getCalendarHandler(
   return appts.map(slimAppt);
 }
 
+const minutesOfDay = (t: TimeOfDay): number => t.h * 60 + t.m;
+
+/**
+ * Reject a range that ends before it starts, before any network call.
+ *
+ * Only compares times when start and end land on the SAME day: across days
+ * `endTime < startTime` is perfectly ordinary (a trip leaving 17:00 on the 7th and
+ * returning 15:00 on the 15th), and Cozi stores exactly that.
+ */
+function assertRangeOrdered(
+  startDay: CalendarDate,
+  startTime: TimeOfDay | null,
+  endDay: CalendarDate,
+  endTime: TimeOfDay | null,
+): void {
+  if (endDay < startDay) {
+    throw new ValidationError(
+      `Appointment end date ${endDay} is before its start date ${startDay}`,
+    );
+  }
+  if (endDay === startDay && startTime && endTime && minutesOfDay(endTime) < minutesOfDay(startTime)) {
+    throw new ValidationError('Appointment end time is before its start time on the same day');
+  }
+}
+
 export async function createAppointmentHandler(
   client: CoziClient,
   subject: string,
@@ -34,14 +62,21 @@ export async function createAppointmentHandler(
   const startParsed = parseIsoDateTime(start);
   const endParsed = parseIsoDateTime(end);
 
+  const startTime = allDay ? null : startParsed.time;
+  const endTime = allDay ? null : endParsed.time;
+  assertRangeOrdered(startParsed.date, startTime, endParsed.date, endTime);
+
   const appt = makeAppointment({
     subject,
     startDay: startParsed.date,
     notes,
     attendees: attendees ?? [],
     location: location ?? null,
-    startTime: allDay ? null : startParsed.time,
-    endTime: allDay ? null : endParsed.time,
+    startTime,
+    endTime,
+    // An `end` on a later day is a multi-day event, which Cozi expresses as an
+    // inclusive dateSpan rather than an end date. Dropping it here is issue #8.
+    dateSpan: dateSpanFromRange(startParsed.date, endParsed.date),
   });
 
   const created = await client.createAppointment(appt);
@@ -79,6 +114,7 @@ export async function updateAppointmentHandler(
 
   let newStartTime: TimeOfDay | null | undefined;
   let newEndTime: TimeOfDay | null | undefined;
+  let newEndDay: CalendarDate | undefined;
   if (fields.start) {
     const parsed = parseIsoDateTime(fields.start);
     merged.startDay = parsed.date;
@@ -87,6 +123,7 @@ export async function updateAppointmentHandler(
   if (fields.end) {
     const parsed = parseIsoDateTime(fields.end);
     newEndTime = parsed.time;
+    newEndDay = parsed.date;
   }
 
   if (fields.allDay === true) {
@@ -95,6 +132,14 @@ export async function updateAppointmentHandler(
   } else {
     if (newStartTime !== undefined) merged.startTime = newStartTime;
     if (newEndTime !== undefined) merged.endTime = newEndTime;
+  }
+
+  // Re-span against the POST-merge start day, so a combined start+end edit is measured
+  // from the new start. A start-only move keeps the span `{ ...existing }` carried over,
+  // and switching to all-day leaves it alone — multi-day all-day events are the common case.
+  if (newEndDay !== undefined) {
+    assertRangeOrdered(merged.startDay, merged.startTime, newEndDay, merged.endTime);
+    merged.dateSpan = dateSpanFromRange(merged.startDay, newEndDay);
   }
 
   const result = await client.updateAppointment(merged);
@@ -121,7 +166,9 @@ export function registerCalendarTools(
       title: 'Get appointments for a month',
       description:
         'Appointments for one month. ' +
-        'Returns: [{id, subject, day, all_day, start?, end?, attendees?, location?, notes?}].',
+        'Returns: [{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?}]. ' +
+        '`day` is always the start day and `end_day` appears only on multi-day events; such an ' +
+        'event is listed in every month it overlaps, so `day` may fall outside the month asked for.',
       inputSchema: { year: z.number().int(), month: z.number().int().min(1).max(12) },
     },
     async ({ year, month }) => {
@@ -141,6 +188,8 @@ export function registerCalendarTools(
       description:
         'Create a calendar appointment. `start` and `end` are ISO datetimes ' +
         "(e.g. '2026-06-15T10:00:00'). For all-day events `end` may equal `start`. " +
+        'For a multi-day event put `end` on a later date — the span is preserved, and the ' +
+        'result reports it as `end_day`. `end` before `start` is an error. ' +
         'For attendees, call family_members() first and pass those `id` values.',
       inputSchema: {
         subject: z.string(),
@@ -175,7 +224,10 @@ export function registerCalendarTools(
         'Partial-update an appointment. The Cozi PUT semantics replace ALL fields, so this tool ' +
         'first fetches the existing appointment from the (year, month) page and merges your ' +
         'changes — only fields you pass are altered. To switch a timed appointment to all-day ' +
-        'pass all_day=true; to switch to timed pass new start/end.',
+        'pass all_day=true; to switch to timed pass new start/end. Passing `end` re-spans the ' +
+        'event against its (possibly newly set) start day, so an `end` on a later date makes it ' +
+        'multi-day and one on the start day collapses it back; passing `start` alone moves the ' +
+        'event and keeps its length, and all_day=true preserves the span.',
       inputSchema: {
         appointment_id: z.string(),
         year: z.number().int(),
