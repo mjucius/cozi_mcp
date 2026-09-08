@@ -19,8 +19,10 @@ export {
   ItemStatusSchema,
   ListType,
   ListTypeSchema,
+  dateSpanFromRange,
   formatTimeOfDay,
   makeAppointment,
+  spanEndDay,
 } from './models.js';
 export type {
   CalendarDate,

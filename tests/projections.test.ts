@@ -95,6 +95,46 @@ describe('slimAppt', () => {
     expect('end' in out).toBe(false);
   });
 
+  it('multi-day timed event ends on the span end day', () => {
+    const out = slimAppt(
+      makeAppointment({
+        startDay: '2027-07-19',
+        startTime: { h: 10, m: 0 },
+        endTime: { h: 11, m: 0 },
+        dateSpan: 4,
+      }),
+    );
+    expect(out.day).toBe('2027-07-19');
+    expect(out.start).toBe('2027-07-19T10:00');
+    expect(out.end).toBe('2027-07-22T11:00');
+    expect(out.end_day).toBe('2027-07-22');
+  });
+
+  it('multi-day all-day event reports end_day with no times', () => {
+    const out = slimAppt(
+      makeAppointment({ startDay: '2026-02-07', startTime: null, endTime: null, dateSpan: 8 }),
+    );
+    expect(out.all_day).toBe(true);
+    expect('start' in out).toBe(false);
+    expect('end' in out).toBe(false);
+    expect(out.end_day).toBe('2026-02-14');
+  });
+
+  it('dateSpan 0 and 1 both mean single day and omit end_day', () => {
+    for (const dateSpan of [0, 1]) {
+      const out = slimAppt(makeAppointment({ startDay: '2026-05-15', dateSpan }));
+      expect(out.end).toBe('2026-05-15T11:00');
+      expect('end_day' in out).toBe(false);
+    }
+  });
+
+  it('spans a month boundary without drifting', () => {
+    const out = slimAppt(
+      makeAppointment({ startDay: '2027-07-30', startTime: null, endTime: null, dateSpan: 4 }),
+    );
+    expect(out.end_day).toBe('2027-08-02');
+  });
+
   it('omits empty attendees/location/notes', () => {
     const out = slimAppt(makeAppointment({ attendees: [], location: null, notes: null }));
     expect('attendees' in out).toBe(false);
@@ -115,6 +155,21 @@ describe('slimAppt', () => {
     const keys = new Set(Object.keys(slimAppt(makeAppointment())));
     expect(keys).toEqual(
       new Set(['id', 'subject', 'day', 'all_day', 'start', 'end', 'attendees', 'location', 'notes']),
+    );
+    const spanKeys = new Set(Object.keys(slimAppt(makeAppointment({ dateSpan: 4 }))));
+    expect(spanKeys).toEqual(
+      new Set([
+        'id',
+        'subject',
+        'day',
+        'all_day',
+        'start',
+        'end',
+        'end_day',
+        'attendees',
+        'location',
+        'notes',
+      ]),
     );
   });
 

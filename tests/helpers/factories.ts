@@ -79,6 +79,7 @@ interface AppointmentInput {
   startDay?: CalendarDate;
   startTime?: TimeOfDay | null;
   endTime?: TimeOfDay | null;
+  dateSpan?: number;
   attendees?: string[];
   location?: string | null;
   notes?: string | null;
@@ -90,7 +91,7 @@ export function makeAppointment(input: AppointmentInput = {}): CoziAppointment {
     startDay: input.startDay ?? '2026-05-15',
     startTime: input.startTime === undefined ? { h: 10, m: 0 } : input.startTime,
     endTime: input.endTime === undefined ? { h: 11, m: 0 } : input.endTime,
-    dateSpan: 0,
+    dateSpan: input.dateSpan ?? 0,
     attendees: input.attendees ?? ['alice', 'bob'],
     location: input.location === undefined ? 'Field B' : input.location,
     notes: input.notes === undefined ? 'Bring water' : input.notes,
