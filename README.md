@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/mjucius-cozi-mcp-badge.png)](https://mseep.ai/app/mjucius-cozi-mcp)
+
 <p align="center">
   <img src="assets/cozi_mcp_logo.svg" width="128" alt="Cozi MCP logo" />
 </p>
