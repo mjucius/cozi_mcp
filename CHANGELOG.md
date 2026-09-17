@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-09-17
+
+### Added
+
+- **`create_appointment` and `update_appointment` accept a bare date for
+  all-day events.** `start`/`end` may now be `'2026-06-15'` instead of
+  `'2026-06-15T00:00:00'` when `all_day=true` (or, on update, when the event is
+  already all-day and `all_day` is not passed). A bare date on a timed event is
+  rejected with a `ValidationError` naming the argument and the fix, rather than
+  defaulting to midnight or silently converting the event to all-day.
+
 ## [2.2.0] - 2026-09-08
 
 Multi-day appointments now work end to end. Two defects were fixed: the one
@@ -144,6 +155,8 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.2.1]: https://github.com/mjucius/cozi_mcp/compare/v2.2.0...v2.2.1
+[2.2.0]: https://github.com/mjucius/cozi_mcp/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/mjucius/cozi_mcp/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/mjucius/cozi_mcp/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/mjucius/cozi_mcp/compare/v2.0.0...v2.0.1

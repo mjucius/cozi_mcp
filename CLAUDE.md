@@ -11,7 +11,7 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 ## Development Commands
 
 - `npm install` — install dependencies
-- `npm test` — vitest (136 tests, mocks `CoziClient` at the boundary; no creds needed)
+- `npm test` — vitest (148 tests, mocks `CoziClient` at the boundary; no creds needed)
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — tsup → `dist/server.js` + `dist/bin.js`
 - `npm run dev` — local stdio dev (needs `COZI_USERNAME` + `COZI_PASSWORD` env vars)
@@ -65,6 +65,7 @@ Three credential entry points, same downstream `getClient(username, password)` c
 `npm test` runs vitest. Test layout:
 
 - `tests/projections.test.ts` — pure dict-shape tests for the slim helpers (15 tests).
+- `tests/parsers.test.ts` — `parseIsoDateTime` (datetime, bare date, offset, rejects) and `parseListType`.
 - `tests/tools-lists.test.ts` — list/item tool handlers with mocked `CoziClient` (17 tests).
 - `tests/tools-calendar.test.ts` — calendar tools, including 9 fetch-then-merge regression tests for `update_appointment` (14 tests).
 - `tests/client-cache.test.ts` — per-credentials `Map` cache (5 tests).
@@ -73,7 +74,7 @@ Three credential entry points, same downstream `getClient(username, password)` c
 - `tests/helpers/factories.ts` — `makePerson` / `makeItem` / `makeList` / `makeAppointment` (mirrors prior `conftest.py` factories).
 - `tests/helpers/mock-client.ts` — `makeMockClient()` returns a stand-in with `vi.fn()` for each method.
 
-136 tests total, ~1s wall time. (The per-file counts above predate several additions — `npm test` is the source of truth.) No network access required.
+148 tests total, ~1s wall time. (The per-file counts above predate several additions — `npm test` is the source of truth.) No network access required.
 
 ## Deployment
 

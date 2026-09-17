@@ -10,7 +10,7 @@ import {
   type CoziAppointment,
   type TimeOfDay,
 } from '../cozi/index.js';
-import { parseIsoDateTime } from './parsers.js';
+import { parseIsoDateTime, type ParsedDateTime } from './parsers.js';
 import { slimAppt, type SlimAppointment } from './projections.js';
 import type { ToolAccessMode } from './index.js';
 import { toolResult } from './untrusted.js';
@@ -49,6 +49,19 @@ function assertRangeOrdered(
   }
 }
 
+/**
+ * A bare `YYYY-MM-DD` is only meaningful for an all-day appointment. On a timed one
+ * it would force us to invent a time, so refuse rather than default to midnight.
+ */
+function assertHasTime(name: 'start' | 'end', raw: string, parsed: ParsedDateTime): void {
+  if (parsed.time === null) {
+    throw new ValidationError(
+      `\`${name}\` '${raw}' has no time; pass all_day=true for an all-day event ` +
+        `or a full ISO datetime like '${parsed.date}T10:00:00'`,
+    );
+  }
+}
+
 export async function createAppointmentHandler(
   client: CoziClient,
   subject: string,
@@ -61,6 +74,10 @@ export async function createAppointmentHandler(
 ): Promise<SlimAppointment> {
   const startParsed = parseIsoDateTime(start);
   const endParsed = parseIsoDateTime(end);
+  if (!allDay) {
+    assertHasTime('start', start, startParsed);
+    assertHasTime('end', end, endParsed);
+  }
 
   const startTime = allDay ? null : startParsed.time;
   const endTime = allDay ? null : endParsed.time;
@@ -112,16 +129,23 @@ export async function updateAppointmentHandler(
   if (fields.location !== undefined) merged.location = fields.location;
   if (fields.attendees !== undefined) merged.attendees = [...fields.attendees];
 
+  // Bare dates are accepted only when the result is all-day: either the caller asked
+  // for it, or the event already is and they did not say otherwise. A timed event
+  // must not be silently converted by an untimed edit.
+  const effectiveAllDay = fields.allDay ?? existing.startTime === null;
+
   let newStartTime: TimeOfDay | null | undefined;
   let newEndTime: TimeOfDay | null | undefined;
   let newEndDay: CalendarDate | undefined;
   if (fields.start) {
     const parsed = parseIsoDateTime(fields.start);
+    if (!effectiveAllDay) assertHasTime('start', fields.start, parsed);
     merged.startDay = parsed.date;
     newStartTime = parsed.time;
   }
   if (fields.end) {
     const parsed = parseIsoDateTime(fields.end);
+    if (!effectiveAllDay) assertHasTime('end', fields.end, parsed);
     newEndTime = parsed.time;
     newEndDay = parsed.date;
   }
@@ -187,7 +211,9 @@ export function registerCalendarTools(
       title: 'Create a calendar appointment',
       description:
         'Create a calendar appointment. `start` and `end` are ISO datetimes ' +
-        "(e.g. '2026-06-15T10:00:00'). For all-day events `end` may equal `start`. " +
+        "(e.g. '2026-06-15T10:00:00'). For all-day events (all_day=true) a bare date " +
+        "(e.g. '2026-06-15') is also accepted and `end` may equal `start`; a bare date " +
+        'on a timed event is an error. ' +
         'For a multi-day event put `end` on a later date — the span is preserved, and the ' +
         'result reports it as `end_day`. `end` before `start` is an error. ' +
         'For attendees, call family_members() first and pass those `id` values.',
@@ -227,7 +253,9 @@ export function registerCalendarTools(
         'pass all_day=true; to switch to timed pass new start/end. Passing `end` re-spans the ' +
         'event against its (possibly newly set) start day, so an `end` on a later date makes it ' +
         'multi-day and one on the start day collapses it back; passing `start` alone moves the ' +
-        'event and keeps its length, and all_day=true preserves the span.',
+        'event and keeps its length, and all_day=true preserves the span. A bare date ' +
+        "(e.g. '2026-06-15') is accepted for `start`/`end` when the event is, or is being " +
+        'made, all-day; on a timed event it is an error.',
       inputSchema: {
         appointment_id: z.string(),
         year: z.number().int(),
