@@ -79,9 +79,10 @@ try {
   check('single-day: times preserved', r?.startTime === '09:00:00' && r?.endTime === '10:00:00',
     `start=${String(r?.startTime)} end=${String(r?.endTime)}`);
 
-  // 5. cross-month span appears in both months, keyed on the start day
+  // 5. cross-month span appears in both months, keyed on the start day.
+  //    Written with bare dates — the all-day shorthand — to prove that path end to end.
   const x = await createAppointmentHandler(
-    client, SUBJ_CROSS, '2027-07-30T00:00:00', '2027-08-02T00:00:00', undefined, true, '', undefined,
+    client, SUBJ_CROSS, '2027-07-30', '2027-08-02', undefined, true, '', undefined,
   );
   created.push({ id: x.id, year: 2027, month: 7 });
   check('cross-month: slim end_day', x.end_day === '2027-08-02', `end_day=${String(x.end_day)}`);

@@ -180,6 +180,57 @@ describe('create_appointment', () => {
     expect(result.end_day).toBe('2026-02-14');
   });
 
+  it('a bare date is accepted for all-day events', async () => {
+    const m = makeMockClient();
+    m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
+    const result = await createAppointmentHandler(
+      asClient(m),
+      'Cruise',
+      '2026-02-07',
+      '2026-02-14',
+      undefined,
+      true,
+      '',
+      undefined,
+    );
+    const sent = m.createAppointment.mock.calls[0]?.[0] as CoziAppointment;
+    expect(sent.startDay).toBe('2026-02-07');
+    expect(sent.startTime).toBeNull();
+    expect(sent.endTime).toBeNull();
+    expect(sent.dateSpan).toBe(8);
+    expect(result.all_day).toBe(true);
+    expect(result.end_day).toBe('2026-02-14');
+  });
+
+  it('a bare date on a timed event is rejected before any client call', async () => {
+    const m = makeMockClient();
+    await expect(
+      createAppointmentHandler(
+        asClient(m),
+        'Untimed',
+        '2026-02-07',
+        '2026-02-07T11:00:00',
+        undefined,
+        false,
+        '',
+        undefined,
+      ),
+    ).rejects.toThrow(/`start` '2026-02-07' has no time; pass all_day=true/);
+    await expect(
+      createAppointmentHandler(
+        asClient(m),
+        'Untimed',
+        '2026-02-07T10:00:00',
+        '2026-02-07',
+        undefined,
+        false,
+        '',
+        undefined,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(m.createAppointment).not.toHaveBeenCalled();
+  });
+
   it('end before start is rejected before any client call', async () => {
     const m = makeMockClient();
     await expect(
@@ -435,6 +486,49 @@ describe('update_appointment fetch-then-merge (regression suite)', () => {
       updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, { end: '2026-05-14T12:00:00' }),
     ).rejects.toBeInstanceOf(ValidationError);
     expect(m.updateAppointment).not.toHaveBeenCalled();
+  });
+
+  it('a bare-date end on an existing all-day event re-spans and stays all-day', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ startTime: null, endTime: null })]);
+    m.updateAppointment.mockImplementation(async (a: CoziAppointment) => a);
+    const result = await updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, { end: '2026-05-18' });
+    const sent = m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment;
+    expect(sent.startTime).toBeNull();
+    expect(sent.endTime).toBeNull();
+    expect(sent.dateSpan).toBe(4);
+    expect(result.all_day).toBe(true);
+    expect(result.end_day).toBe('2026-05-18');
+  });
+
+  it('a bare-date start on a timed event without all_day is rejected before the write', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment()]);
+    await expect(
+      updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, { start: '2026-05-16' }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, { end: '2026-05-16', allDay: false }),
+    ).rejects.toThrow(/`end` '2026-05-16' has no time/);
+    expect(m.updateAppointment).not.toHaveBeenCalled();
+  });
+
+  it('bare dates with all_day=true convert a timed event and set the span', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment()]);
+    m.updateAppointment.mockImplementation(async (a: CoziAppointment) => a);
+    const result = await updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, {
+      start: '2026-06-01',
+      end: '2026-06-03',
+      allDay: true,
+    });
+    const sent = m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment;
+    expect(sent.startDay).toBe('2026-06-01');
+    expect(sent.startTime).toBeNull();
+    expect(sent.endTime).toBeNull();
+    expect(sent.dateSpan).toBe(3);
+    expect(result.all_day).toBe(true);
+    expect(result.end_day).toBe('2026-06-03');
   });
 
   it('untouched edits leave the span alone', async () => {
