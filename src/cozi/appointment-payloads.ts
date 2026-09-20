@@ -8,11 +8,9 @@ import { CoziAppointment, formatTimeOfDay } from './models.js';
 // which meant every all_day=true create and every switch-to-all-day edit failed.
 const time = (t: CoziAppointment['startTime']): string => (t ? formatTimeOfDay(t) : '00:00');
 
-// Cozi's `dateSpan` is an inclusive day count (1 = single day); the field is simply absent
-// on most single-day events, which parses to 0 here. Always send at least 1 rather than a
-// bare 0: an edit is a FULL REPLACE, so shrinking a multi-day event back to one day has to
-// carry a positive single-day value, and 1 is what Cozi itself stores for one-day events.
-const span = (dateSpan: number): number => Math.max(dateSpan, 1);
+// `dateSpan` goes out exactly as the model carries it. It is a day offset (see
+// models.ts): 0 for a same-day timed event, 1 for a one-day all-day event. Clamping
+// it to >= 1 here is what created issue #12 — every timed appointment gained a day.
 
 export function toApiCreateFormat(a: CoziAppointment): Record<string, unknown> {
   return {
@@ -22,7 +20,7 @@ export function toApiCreateFormat(a: CoziAppointment): Record<string, unknown> {
       details: {
         startTime: time(a.startTime),
         endTime: time(a.endTime),
-        dateSpan: span(a.dateSpan),
+        dateSpan: a.dateSpan,
         attendeeSet: a.attendees,
         location: a.location,
         notes: a.notes,
@@ -65,7 +63,7 @@ export function toApiEditFormat(a: CoziAppointment): Record<string, unknown> {
       details: {
         startTime: time(a.startTime),
         endTime: time(a.endTime),
-        dateSpan: span(a.dateSpan),
+        dateSpan: a.dateSpan,
         attendeeSet: a.attendees,
         subject: a.subject,
         location: a.location,

@@ -51,6 +51,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "typecheck": "tsc --noEmit",
     "playground": "npx -y @smithery/cli dev",
     "bundle:mcpb": "npm run build && npx -y @anthropic-ai/mcpb pack ."

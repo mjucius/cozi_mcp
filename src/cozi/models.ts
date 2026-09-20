@@ -38,13 +38,26 @@ const todayCalendarDate = (): CalendarDate => {
   return `${y}-${m}-${day}`;
 };
 
-// Cozi's `dateSpan` is an INCLUSIVE day count, not a count of extra days: a one-day event
-// is 1, and the field is usually omitted entirely on the wire (which parses to 0 here).
+// Cozi's `dateSpan` is a day OFFSET: an appointment's end instant is `day + dateSpan`
+// days later, at `endTime`. One rule for timed and all-day events alike.
 //
-// Verified against 782 live appointments 2026-09-08: one-day holidays ("New Year's Day",
-// "Thanksgiving Day", "Christmas Day") carry dateSpan 1, while a Feb 7 -> Feb 15 trip
-// carries 9 and a Jul 14 -> Aug 4 summer camp carries 22. 658 ordinary same-day events
-// carry no dateSpan at all. So 0 and 1 both mean "single day".
+//   timed   09:00 -> 17:00 same day          dateSpan 0 (Cozi usually omits the field)
+//   timed   20:00 -> 02:00 the next morning  dateSpan 1
+//   all-day one day                          dateSpan 1
+//   all-day Jul 30 -> Aug 2 (4 days)         dateSpan 4
+//
+// The all-day values are not a different convention. An all-day event is stored as
+// 00:00:00 -> 00:00:00, so its end instant is the midnight AFTER its last covered
+// day — exactly iCal's exclusive DTEND. People name an all-day event by its last
+// covered day, so the +1 on the way in and the -1 on the way out live in the two
+// helpers below and nowhere else.
+//
+// Established 2026-09-20 by write-then-observe against live Cozi (issue #12): the
+// server lists a spanning appointment on every month page its [day, day + dateSpan]
+// range touches, and a timed same-day event written with dateSpan 1 is paged onto
+// the following month — i.e. Cozi reads it as two days. 2.2.0/2.2.1 sent exactly
+// that, having misread the field as an inclusive count from a read-only survey.
+// `tests/live/calendar.test.ts` pins these semantics against the real API.
 //
 // Day arithmetic is done in UTC so a DST transition can never shift a result by a day.
 const DAY_MS = 86_400_000;
@@ -63,16 +76,20 @@ const utcMsToCalendarDate = (ms: number): CalendarDate => {
   return `${y}-${mo}-${day}`;
 };
 
-/** Last day an appointment covers, given its start day and Cozi `dateSpan`. */
-export function spanEndDay(startDay: CalendarDate, dateSpan: number): CalendarDate {
-  const span = Math.max(Number.isFinite(dateSpan) ? dateSpan : 0, 1);
-  return utcMsToCalendarDate(calendarDateToUtcMs(startDay) + (span - 1) * DAY_MS);
+/**
+ * Last calendar day an appointment covers. For an all-day event that is the day
+ * before its (exclusive) end instant; a missing/zero all-day span is treated as one day.
+ */
+export function lastDayOf(startDay: CalendarDate, dateSpan: number, allDay: boolean): CalendarDate {
+  const span = Number.isFinite(dateSpan) ? dateSpan : 0;
+  const offset = Math.max(span - (allDay ? 1 : 0), 0);
+  return utcMsToCalendarDate(calendarDateToUtcMs(startDay) + offset * DAY_MS);
 }
 
-/** Cozi `dateSpan` for an inclusive [startDay, endDay] range. Same-day yields 1. */
-export function dateSpanFromRange(startDay: CalendarDate, endDay: CalendarDate): number {
-  const diff = (calendarDateToUtcMs(endDay) - calendarDateToUtcMs(startDay)) / DAY_MS;
-  return Math.max(Math.round(diff), 0) + 1;
+/** Cozi `dateSpan` for an appointment whose last covered day is `lastDay`. */
+export function dateSpanForLastDay(startDay: CalendarDate, lastDay: CalendarDate, allDay: boolean): number {
+  const diff = Math.round((calendarDateToUtcMs(lastDay) - calendarDateToUtcMs(startDay)) / DAY_MS);
+  return Math.max(diff, 0) + (allDay ? 1 : 0);
 }
 
 const parseTimeOfDay = (v: unknown): TimeOfDay | null => {

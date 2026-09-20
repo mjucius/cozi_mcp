@@ -119,7 +119,7 @@ describe('create_appointment', () => {
 
   // Issue #8: an `end` on a later day was parsed and then discarded, so a 4-day event
   // was silently created as a 1-day event with no error surfaced anywhere.
-  it('multi-day event sends an inclusive dateSpan and reports the real end', async () => {
+  it('multi-day event sends dateSpan as the day offset and reports the real end', async () => {
     const m = makeMockClient();
     m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
     const result = await createAppointmentHandler(
@@ -136,13 +136,14 @@ describe('create_appointment', () => {
     expect(sent.startDay).toBe('2027-07-19');
     expect(sent.startTime).toEqual({ h: 10, m: 0 });
     expect(sent.endTime).toEqual({ h: 11, m: 0 });
-    expect(sent.dateSpan).toBe(4);
+    expect(sent.dateSpan).toBe(3);
     expect(result.day).toBe('2027-07-19');
     expect(result.end).toBe('2027-07-22T11:00');
     expect(result.end_day).toBe('2027-07-22');
   });
 
-  it('same-day event sends dateSpan 1 and omits end_day', async () => {
+  // Issue #12: 2.2.0 sent 1 here, which Cozi reads as "ends the next day".
+  it('same-day timed event sends dateSpan 0 and omits end_day', async () => {
     const m = makeMockClient();
     m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
     const result = await createAppointmentHandler(
@@ -155,7 +156,38 @@ describe('create_appointment', () => {
       '',
       undefined,
     );
+    expect((m.createAppointment.mock.calls[0]?.[0] as CoziAppointment).dateSpan).toBe(0);
+    expect('end_day' in result).toBe(false);
+  });
+
+  it('timed overnight event sends dateSpan 1 and reports the next-day end', async () => {
+    const m = makeMockClient();
+    m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
+    const result = await createAppointmentHandler(
+      asClient(m),
+      'Late show',
+      '2026-05-15T20:00:00',
+      '2026-05-16T02:00:00',
+      undefined,
+      false,
+      '',
+      undefined,
+    );
     expect((m.createAppointment.mock.calls[0]?.[0] as CoziAppointment).dateSpan).toBe(1);
+    expect(result.end).toBe('2026-05-16T02:00');
+    expect(result.end_day).toBe('2026-05-16');
+  });
+
+  // An all-day event's dateSpan counts covered days (its end instant is the
+  // following midnight), so a single all-day event is 1 — never 0.
+  it('single all-day event sends dateSpan 1', async () => {
+    const m = makeMockClient();
+    m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
+    const result = await createAppointmentHandler(
+      asClient(m), 'Holiday', '2026-05-15', '2026-05-15', undefined, true, '', undefined,
+    );
+    expect((m.createAppointment.mock.calls[0]?.[0] as CoziAppointment).dateSpan).toBe(1);
+    expect(result.all_day).toBe(true);
     expect('end_day' in result).toBe(false);
   });
 
@@ -164,7 +196,7 @@ describe('create_appointment', () => {
     m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
     const result = await createAppointmentHandler(
       asClient(m),
-      'Cruise',
+      'Family trip',
       '2026-02-07T00:00:00',
       '2026-02-14T00:00:00',
       undefined,
@@ -185,7 +217,7 @@ describe('create_appointment', () => {
     m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
     const result = await createAppointmentHandler(
       asClient(m),
-      'Cruise',
+      'Family trip',
       '2026-02-07',
       '2026-02-14',
       undefined,
@@ -270,7 +302,7 @@ describe('create_appointment', () => {
     m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'new_id' }));
     await createAppointmentHandler(
       asClient(m),
-      'Dubai trip',
+      'Long trip',
       '2027-02-07T17:00:00',
       '2027-02-15T15:00:00',
       undefined,
@@ -279,7 +311,7 @@ describe('create_appointment', () => {
       undefined,
     );
     const sent = m.createAppointment.mock.calls[0]?.[0] as CoziAppointment;
-    expect(sent.dateSpan).toBe(9);
+    expect(sent.dateSpan).toBe(8);
   });
 });
 
@@ -429,7 +461,7 @@ describe('update_appointment fetch-then-merge (regression suite)', () => {
     });
     const sent = m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment;
     expect(sent.startDay).toBe('2026-05-15');
-    expect(sent.dateSpan).toBe(4);
+    expect(sent.dateSpan).toBe(3);
     expect(result.end_day).toBe('2026-05-18');
   });
 
@@ -443,7 +475,7 @@ describe('update_appointment fetch-then-merge (regression suite)', () => {
     });
     const sent = m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment;
     expect(sent.startDay).toBe('2026-06-01');
-    expect(sent.dateSpan).toBe(3);
+    expect(sent.dateSpan).toBe(2);
   });
 
   it('end on the start day collapses a multi-day event back to one day', async () => {
@@ -454,7 +486,7 @@ describe('update_appointment fetch-then-merge (regression suite)', () => {
       end: '2026-05-15T11:00:00',
     });
     const sent = m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment;
-    expect(sent.dateSpan).toBe(1);
+    expect(sent.dateSpan).toBe(0);
     expect('end_day' in result).toBe(false);
   });
 
@@ -468,15 +500,42 @@ describe('update_appointment fetch-then-merge (regression suite)', () => {
     expect(sent.dateSpan).toBe(4);
   });
 
-  it('switching to all-day preserves the span', async () => {
+  // A timed May 15 -> May 23 event (dateSpan 8) made all-day still ends on May 23,
+  // which as an all-day span is 9 covered days.
+  it('switching a timed event to all-day keeps its last day', async () => {
     const m = makeMockClient();
     m.getCalendar.mockResolvedValue([makeAppointment({ dateSpan: 8 })]);
     m.updateAppointment.mockImplementation(async (a: CoziAppointment) => a);
     const result = await updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, { allDay: true });
     const sent = m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment;
     expect(sent.startTime).toBeNull();
-    expect(sent.dateSpan).toBe(8);
-    expect(result.end_day).toBe('2026-05-22');
+    expect(sent.dateSpan).toBe(9);
+    expect(result.all_day).toBe(true);
+    expect(result.end_day).toBe('2026-05-23');
+  });
+
+  it('all_day=true on an event that is already all-day leaves the span alone', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ startTime: null, endTime: null, dateSpan: 4 })]);
+    m.updateAppointment.mockImplementation(async (a: CoziAppointment) => a);
+    await updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, { allDay: true, notes: 'x' });
+    expect((m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment).dateSpan).toBe(4);
+  });
+
+  it('switching an all-day event to timed via start+end keeps its last day', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ startTime: null, endTime: null, dateSpan: 4 })]);
+    m.updateAppointment.mockImplementation(async (a: CoziAppointment) => a);
+    const result = await updateAppointmentHandler(asClient(m), 'appt_1', 2026, 5, {
+      start: '2026-05-15T10:00:00',
+      end: '2026-05-18T11:00:00',
+      allDay: false,
+    });
+    const sent = m.updateAppointment.mock.calls[0]?.[0] as CoziAppointment;
+    expect(sent.startTime).toEqual({ h: 10, m: 0 });
+    expect(sent.dateSpan).toBe(3);
+    expect(result.all_day).toBe(false);
+    expect(result.end_day).toBe('2026-05-18');
   });
 
   it('an end before the merged start day is rejected before the write', async () => {
@@ -566,11 +625,12 @@ describe('all-day appointments on the wire', () => {
     expect(create.create.details.endTime).toBe('11:00');
   });
 
-  it('dateSpan is normalised to at least 1 on both payloads', () => {
+  // Issue #12: clamping dateSpan to >= 1 turned every same-day timed event into two days.
+  it('dateSpan is sent verbatim on both payloads, including 0', () => {
     const create = toApiCreateFormat(makeAppointment({ dateSpan: 0 })) as {
       create: { details: Record<string, unknown> };
     };
-    expect(create.create.details.dateSpan).toBe(1);
+    expect(create.create.details.dateSpan).toBe(0);
     const edit = toApiEditFormat(makeAppointment({ dateSpan: 4 })) as {
       edit: { details: Record<string, unknown> };
     };

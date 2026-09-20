@@ -4,6 +4,53 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-09-20
+
+### Fixed
+
+- **Timed appointments are no longer created a day too long**
+  ([#12](https://github.com/mjucius/cozi_mcp/issues/12)). Since 2.2.0 every
+  `create_appointment` and re-spanning `update_appointment` with real start/end
+  times produced an event that ended one day after the requested end — a 9:00–17:00
+  meeting ran until 17:00 the *next* day in the Cozi app. All-day events were
+  unaffected. The cause was a misreading of Cozi's `dateSpan` field (see below),
+  compounded by a `>= 1` clamp in the payload builders. Both are gone: timed writes
+  now send `dateSpan = lastDay − startDay` (`0` for a same-day event, exactly what
+  2.1.x sent); all-day writes are unchanged.
+- **`create_appointment` and `update_appointment` return what Cozi stored**, parsed
+  from the write response the same way `get_calendar` parses a page, instead of
+  echoing the request back. A write that Cozi interprets differently from what was
+  asked is now visible in the tool result; before, the echo hid #12 entirely.
+- **`get_calendar` reads timed spans correctly.** A timed event with `dateSpan: 1`
+  (an overnight) was reported as ending on its start day.
+
+### Changed
+
+- **Live conformance suite replaces the smoke scripts.** `npm run test:live` runs
+  `tests/live/` against the real Cozi API with the credentials in `creds.env` (or
+  `COZI_USERNAME`/`COZI_PASSWORD`): creates, updates and deletes in a fixed past
+  sandbox window, verifies each write by a fresh read of the raw wire, checks span
+  semantics through the month pages Cozi lists the appointment on, asserts the tool
+  result equals a fresh read, and cleans up after itself. The three
+  `scripts/smoke*.ts` files are removed. `npm test` is unchanged and still needs
+  no credentials.
+- Events created by 2.2.0 or 2.2.1 with start/end times are stored a day too long;
+  re-setting `end` once with `update_appointment` (or in the Cozi app) corrects each.
+
+### Notes on the wire format (correcting 2.2.0)
+
+`dateSpan` is a **day offset**, not an inclusive count: an appointment's end
+instant is `day + dateSpan` days later, at `endTime`, for timed and all-day events
+alike. An all-day event is stored as `00:00:00`/`00:00:00`, so its end instant is
+the midnight *after* its last covered day — the same exclusive-end convention as
+iCal `DTEND`. That is why a one-day holiday carries `1` while a same-day timed
+event carries `0` (usually omitted), and why a timed event with `dateSpan: 1` is an
+overnight. Established by write-then-observe against the live API: Cozi lists a
+spanning appointment on every month page its `[day, day + dateSpan]` range
+touches, and a same-day timed event written with `dateSpan: 1` on the last day of
+a month is paged onto the following month. The 2.2.0 note below inferred an
+inclusive count from a read-only survey and was wrong for timed events.
+
 ## [2.2.1] - 2026-09-17
 
 ### Added
@@ -56,6 +103,9 @@ reported in #8, and a second, pre-existing one found while verifying it.
   all-day span. Cleans up after itself.
 
 ### Notes on the wire format
+
+> **Corrected in 2.2.2.** The inclusive-count reading below is wrong for timed
+> events; see the 2.2.2 notes for the actual rule.
 
 `dateSpan` is an **inclusive** day count, not a count of extra days. Established
 by probing a live account read-only across 24 months and 782 appointments:
@@ -155,6 +205,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.2.2]: https://github.com/mjucius/cozi_mcp/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/mjucius/cozi_mcp/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/mjucius/cozi_mcp/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/mjucius/cozi_mcp/compare/v2.1.0...v2.1.1

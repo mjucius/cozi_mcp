@@ -4,7 +4,7 @@ import {
   CoziClient,
   ResourceNotFoundError,
   ValidationError,
-  dateSpanFromRange,
+  dateSpanForLastDay,
   makeAppointment,
   type CalendarDate,
   type CoziAppointment,
@@ -91,9 +91,9 @@ export async function createAppointmentHandler(
     location: location ?? null,
     startTime,
     endTime,
-    // An `end` on a later day is a multi-day event, which Cozi expresses as an
-    // inclusive dateSpan rather than an end date. Dropping it here is issue #8.
-    dateSpan: dateSpanFromRange(startParsed.date, endParsed.date),
+    // An `end` on a later day is a multi-day event, which Cozi expresses as a
+    // dateSpan rather than an end date. Dropping it here is issue #8.
+    dateSpan: dateSpanForLastDay(startParsed.date, endParsed.date, allDay),
   });
 
   const created = await client.createAppointment(appt);
@@ -136,7 +136,7 @@ export async function updateAppointmentHandler(
 
   let newStartTime: TimeOfDay | null | undefined;
   let newEndTime: TimeOfDay | null | undefined;
-  let newEndDay: CalendarDate | undefined;
+  let newLastDay: CalendarDate | undefined;
   if (fields.start) {
     const parsed = parseIsoDateTime(fields.start);
     if (!effectiveAllDay) assertHasTime('start', fields.start, parsed);
@@ -147,7 +147,7 @@ export async function updateAppointmentHandler(
     const parsed = parseIsoDateTime(fields.end);
     if (!effectiveAllDay) assertHasTime('end', fields.end, parsed);
     newEndTime = parsed.time;
-    newEndDay = parsed.date;
+    newLastDay = parsed.date;
   }
 
   if (fields.allDay === true) {
@@ -158,12 +158,17 @@ export async function updateAppointmentHandler(
     if (newEndTime !== undefined) merged.endTime = newEndTime;
   }
 
-  // Re-span against the POST-merge start day, so a combined start+end edit is measured
-  // from the new start. A start-only move keeps the span `{ ...existing }` carried over,
-  // and switching to all-day leaves it alone — multi-day all-day events are the common case.
-  if (newEndDay !== undefined) {
-    assertRangeOrdered(merged.startDay, merged.startTime, newEndDay, merged.endTime);
-    merged.dateSpan = dateSpanFromRange(merged.startDay, newEndDay);
+  // `dateSpan` is a day offset from the start day (models.ts), so a start-only move
+  // and an unrelated edit keep the event's length by carrying it over untouched.
+  // It is recomputed only when the last day is given, measured from the POST-merge
+  // start day and all-day-ness — or when a timed event becomes all-day, in which
+  // case it now covers the whole of the day it used to end partway through.
+  const mergedAllDay = merged.startTime === null;
+  if (newLastDay !== undefined) {
+    assertRangeOrdered(merged.startDay, merged.startTime, newLastDay, merged.endTime);
+    merged.dateSpan = dateSpanForLastDay(merged.startDay, newLastDay, mergedAllDay);
+  } else if (mergedAllDay && existing.endTime !== null) {
+    merged.dateSpan += 1;
   }
 
   const result = await client.updateAppointment(merged);

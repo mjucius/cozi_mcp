@@ -95,13 +95,14 @@ describe('slimAppt', () => {
     expect('end' in out).toBe(false);
   });
 
-  it('multi-day timed event ends on the span end day', () => {
+  // `dateSpan` is a day offset: a timed event ends dateSpan days after it starts.
+  it('multi-day timed event ends dateSpan days after its start', () => {
     const out = slimAppt(
       makeAppointment({
         startDay: '2027-07-19',
         startTime: { h: 10, m: 0 },
         endTime: { h: 11, m: 0 },
-        dateSpan: 4,
+        dateSpan: 3,
       }),
     );
     expect(out.day).toBe('2027-07-19');
@@ -110,6 +111,22 @@ describe('slimAppt', () => {
     expect(out.end_day).toBe('2027-07-22');
   });
 
+  // Issue #12: a timed event with dateSpan 1 is an overnight, not a single day.
+  it('timed event with dateSpan 1 ends the next day', () => {
+    const out = slimAppt(
+      makeAppointment({
+        startDay: '2026-08-16',
+        startTime: { h: 23, m: 55 },
+        endTime: { h: 22, m: 0 },
+        dateSpan: 1,
+      }),
+    );
+    expect(out.end).toBe('2026-08-17T22:00');
+    expect(out.end_day).toBe('2026-08-17');
+  });
+
+  // An all-day event's end instant is the midnight after its last day, so its
+  // dateSpan counts covered days: 8 days from Feb 7 end on Feb 14.
   it('multi-day all-day event reports end_day with no times', () => {
     const out = slimAppt(
       makeAppointment({ startDay: '2026-02-07', startTime: null, endTime: null, dateSpan: 8 }),
@@ -120,10 +137,18 @@ describe('slimAppt', () => {
     expect(out.end_day).toBe('2026-02-14');
   });
 
-  it('dateSpan 0 and 1 both mean single day and omit end_day', () => {
+  it('timed dateSpan 0 is a single day and omits end_day', () => {
+    const out = slimAppt(makeAppointment({ startDay: '2026-05-15', dateSpan: 0 }));
+    expect(out.end).toBe('2026-05-15T11:00');
+    expect('end_day' in out).toBe(false);
+  });
+
+  it('all-day dateSpan 0 (field absent) and 1 both mean a single day', () => {
     for (const dateSpan of [0, 1]) {
-      const out = slimAppt(makeAppointment({ startDay: '2026-05-15', dateSpan }));
-      expect(out.end).toBe('2026-05-15T11:00');
+      const out = slimAppt(
+        makeAppointment({ startDay: '2026-05-15', startTime: null, endTime: null, dateSpan }),
+      );
+      expect(out.all_day).toBe(true);
       expect('end_day' in out).toBe(false);
     }
   });
