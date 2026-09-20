@@ -30,7 +30,7 @@ const STALE_CREDENTIAL_HINT =
  * file but not the others fails CI instead of shipping a server that misreports
  * which build is actually running.
  */
-export const SERVER_VERSION = '2.2.1';
+export const SERVER_VERSION = '2.2.2';
 
 const clients = new Map<string, { client: CoziClient; authAt: number }>();
 const cacheKey = (username: string, password: string) => `${username}\u0000${password}`;

@@ -4,7 +4,7 @@ import {
   CoziList,
   CoziPerson,
   formatTimeOfDay,
-  spanEndDay,
+  lastDayOf,
 } from '../cozi/index.js';
 
 export interface SlimPerson {
@@ -72,14 +72,15 @@ export function slimItem(i: CoziItem): SlimItem {
 
 export function slimAppt(a: CoziAppointment): SlimAppointment {
   const day = a.startDay;
-  // A multi-day event ends on day + dateSpan - 1, not on its start day. Binding `end`
-  // to `day` is what made get_calendar echo a collapsed end date back (issue #8).
-  const endDay = spanEndDay(day, a.dateSpan);
+  const allDay = a.startTime == null;
+  // A multi-day event ends on a later day than it starts (issue #8); how much later
+  // is Cozi's `dateSpan`, read the same way for timed and all-day events (issue #12).
+  const endDay = lastDayOf(day, a.dateSpan, allDay);
   const out: SlimAppointment = {
     id: a.id ?? '',
     subject: a.subject,
     day,
-    all_day: a.startTime == null,
+    all_day: allDay,
   };
   if (a.startTime) out.start = `${day}T${formatTimeOfDay(a.startTime)}`;
   if (a.endTime) out.end = `${endDay}T${formatTimeOfDay(a.endTime)}`;

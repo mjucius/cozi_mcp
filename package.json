@@ -1,6 +1,6 @@
 {
   "name": "@mjucius/cozi-mcp",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Unofficial MCP server for Cozi Family Organizer (lists + calendar). Distributed as MCPB, on Smithery, and via npx.",
   "license": "MIT",
   "author": {
@@ -51,6 +51,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "typecheck": "tsc --noEmit",
     "playground": "npx -y @smithery/cli dev",
     "bundle:mcpb": "npm run build && npx -y @anthropic-ai/mcpb pack ."

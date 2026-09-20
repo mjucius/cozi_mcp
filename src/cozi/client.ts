@@ -412,19 +412,27 @@ export class CoziClient {
     });
     assertNotRejected(response, 'create');
 
+    // The response carries the stored item under its new id. Return THAT, parsed the
+    // same way a calendar GET is, rather than echoing the request back: the caller
+    // then sees what Cozi actually persisted. 2.2.0 echoed, which is why issue #12
+    // (every timed appointment a day too long) was invisible in the tool output.
     if (isObj(response) && isObj(response.items)) {
       const items = response.items;
+      // The fallback is the old echo; only the live suite's "tool result equals a
+      // fresh get_calendar read" assertion would notice if it ever took over.
+      const stored = (itemId: string, itemData: unknown): CoziAppointment =>
+        this.parseCalendarItem(itemId, itemData) ?? { ...appt, id: itemId };
 
       for (const [itemId, itemData] of Object.entries(items)) {
         if (!isObj(itemData)) continue;
         if (itemData.day === appt.startDay && itemData.description === appt.subject) {
-          return { ...appt, id: itemId };
+          return stored(itemId, itemData);
         }
       }
       for (const [itemId, itemData] of Object.entries(items)) {
         if (!isObj(itemData)) continue;
         if (itemData.description === appt.subject) {
-          return { ...appt, id: itemId };
+          return stored(itemId, itemData);
         }
       }
     }
@@ -450,6 +458,12 @@ export class CoziClient {
       body: [toApiEditFormat(appt)],
     });
     assertNotRejected(response, 'edit', appt.id);
+    // As with create: prefer the stored item the response carries over the merged
+    // object we sent, so the caller sees what persisted.
+    if (isObj(response) && isObj(response.items)) {
+      const stored = this.parseCalendarItem(appt.id, response.items[appt.id]);
+      if (stored) return stored;
+    }
     return appt;
   }
 

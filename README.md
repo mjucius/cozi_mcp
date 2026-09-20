@@ -163,7 +163,8 @@ Requires Node 20+ (see `.nvmrc`).
 ```bash
 nvm use
 npm install
-npm test               # vitest, 68 tests
+npm test               # vitest, mocked at the CoziClient boundary; no credentials
+npm run test:live      # live conformance suite against real Cozi (creds.env); required before a release
 npm run typecheck
 npm run build          # tsup → dist/
 npm run dev            # local stdio dev with COZI_USERNAME / COZI_PASSWORD env vars
