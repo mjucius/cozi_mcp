@@ -7,6 +7,7 @@ import {
   isRecurring,
   lastDayOf,
   recurrenceText,
+  skippedDays,
 } from '../cozi/index.js';
 
 export interface SlimPerson {
@@ -52,6 +53,11 @@ export interface SlimAppointment {
   recurrence?: string;
   /** Last day of a bounded series. Omitted when the series is open-ended. */
   series_end?: string;
+  /**
+   * Days on which a single occurrence of the series was deleted in Cozi. The rule
+   * still names them, but nothing happens on them. Omitted when there are none.
+   */
+  skipped_days?: string[];
 }
 
 export function slimPerson(p: CoziPerson): SlimPerson {
@@ -108,6 +114,8 @@ export function slimAppt(a: CoziAppointment): SlimAppointment {
     const text = recurrenceText(a);
     if (text) out.recurrence = text;
     if (a.endDay) out.series_end = a.endDay;
+    const skipped = skippedDays(a);
+    if (skipped.length) out.skipped_days = skipped;
   }
   return out;
 }

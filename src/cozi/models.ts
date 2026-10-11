@@ -337,6 +337,27 @@ export function isRecurring(a: Pick<CoziAppointment, 'recurrence'>): boolean {
   return typeof r.endDay === 'string';
 }
 
+/**
+ * Days on which an occurrence of a series was deleted in the Cozi app ("delete this
+ * occurrence only"). The series itself stays; Cozi records each removed instance in
+ * `recurrence.exdates` as `{ date: 'YYYY-MM-DDTHH:MM:SS' }`. Without these a reader
+ * of the rule ("Every Monday") would still count the deleted day as planned.
+ * Returned sorted and de-duplicated, as bare calendar dates.
+ */
+export function skippedDays(a: Pick<CoziAppointment, 'recurrence'>): CalendarDate[] {
+  const exdates = a.recurrence?.exdates;
+  if (!Array.isArray(exdates)) return [];
+  const days = new Set<CalendarDate>();
+  for (const ex of exdates) {
+    const raw =
+      typeof ex === 'string' ? ex : ex && typeof ex === 'object' ? (ex as { date?: unknown }).date : undefined;
+    if (typeof raw !== 'string') continue;
+    const day = raw.slice(0, 10);
+    if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(day)) days.add(day as CalendarDate);
+  }
+  return [...days].sort();
+}
+
 /** Cozi's human-readable rule (`recurrence.text`, an array of fragments), or null. */
 export function recurrenceText(a: Pick<CoziAppointment, 'recurrence'>): string | null {
   const text = a.recurrence?.text;

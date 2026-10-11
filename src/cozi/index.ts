@@ -25,6 +25,7 @@ export {
   makeAppointment,
   lastDayOf,
   recurrenceText,
+  skippedDays,
 } from './models.js';
 export type {
   CalendarDate,

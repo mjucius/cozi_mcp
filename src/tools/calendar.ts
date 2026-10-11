@@ -219,12 +219,14 @@ export function registerCalendarTools(
       description:
         'Appointments for one month. ' +
         'Returns: [{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?, ' +
-        'recurring?, recurrence?, series_end?}]. ' +
+        'recurring?, recurrence?, series_end?, skipped_days?}]. ' +
         '`day` is always the start day and `end_day` appears only on multi-day events; such an ' +
         'event is listed in every month it overlaps, so `day` may fall outside the month asked for. ' +
         'A recurring series is ONE entry carrying `recurring: true` (plus `recurrence`, its rule ' +
         'in words, and `series_end` when bounded); it stands for every occurrence and individual ' +
-        'occurrences are not listed. Updating or deleting its `id` affects the whole series.',
+        'occurrences are not listed. Work out the actual days from `recurrence`, then drop any in ' +
+        '`skipped_days`: those single occurrences were deleted in Cozi and are NOT happening. ' +
+        'Updating or deleting its `id` affects the whole series.',
       inputSchema: { year: z.number().int(), month: z.number().int().min(1).max(12) },
     },
     async ({ year, month }) => {
