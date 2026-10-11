@@ -318,6 +318,37 @@ export function makeAppointment(input: CoziAppointmentInput): CoziAppointment {
   };
 }
 
+/**
+ * Whether an appointment is a recurring series.
+ *
+ * Cozi returns a series as ONE calendar item (keyed by its id on every month page it
+ * touches), never as separate occurrences; `recurrence` lives in `itemDetails` and
+ * carries `rules` on a fresh create but, on a plain GET, may carry only Cozi's own
+ * wording (`text: string[]`), `endDay` and `exdates` (see
+ * tests/security-recurrence-preservation.test.ts for the real wire shape). Any of
+ * those marks a series. An edit or delete of its id therefore hits every occurrence.
+ */
+export function isRecurring(a: Pick<CoziAppointment, 'recurrence'>): boolean {
+  const r = a.recurrence;
+  if (!r) return false;
+  if (Array.isArray(r.rules) && r.rules.length > 0) return true;
+  if (Array.isArray(r.text) && r.text.length > 0) return true;
+  if (typeof r.text === 'string' && r.text.trim() !== '') return true;
+  return typeof r.endDay === 'string';
+}
+
+/** Cozi's human-readable rule (`recurrence.text`, an array of fragments), or null. */
+export function recurrenceText(a: Pick<CoziAppointment, 'recurrence'>): string | null {
+  const text = a.recurrence?.text;
+  const joined = Array.isArray(text)
+    ? text.filter((t): t is string => typeof t === 'string').join('')
+    : typeof text === 'string'
+      ? text
+      : '';
+  const trimmed = joined.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 export function formatTimeOfDay(t: TimeOfDay): string {
   return `${String(t.h).padStart(2, '0')}:${String(t.m).padStart(2, '0')}`;
 }

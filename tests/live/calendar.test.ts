@@ -8,7 +8,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ValidationError } from '../../src/cozi/index.js';
+import { ResourceNotFoundError, ValidationError } from '../../src/cozi/index.js';
 import {
   createAppointmentHandler,
   deleteAppointmentHandler,
@@ -267,6 +267,14 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       const ruleBefore = stable((created!.recurrence as { rules?: unknown }).rules);
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
 
+      // The series is flagged as such in the projection, on every page it is listed on.
+      // (`series_end` is not asserted: whether Cozi echoes `untilDay` back as
+      // `recurrence.endDay` on a fresh create has not been observed — add it once seen.)
+      for (const m of [JAN, FEB]) {
+        const seen = (await getCalendarHandler(live.client, Y, m)).find((a) => a.id === created!.id);
+        expect(seen?.recurring, `recurring flag on ${Y}-${m}`).toBe(true);
+      }
+
       await updateAppointmentHandler(live.client, created!.id!, Y, JAN, { notes: 'edited' });
       const after = (await live.client.getCalendar(Y, JAN)).find((a) => a.id === created!.id);
       expect(after?.notes).toBe('edited');
@@ -307,14 +315,35 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       }]);
       const created = (await live.client.getCalendar(Y, JAN)).find((a) => a.subject === s);
       expect(created?.id).toBeTruthy();
+      live.track(created!.id!, Y, JAN);
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
-      expect(await deleteAppointmentHandler(live.client, created!.id!, Y, JAN)).toBe(true);
+
+      // Without delete_series the tool refuses and the series is untouched...
+      await expect(deleteAppointmentHandler(live.client, created!.id!, Y, JAN)).rejects.toBeInstanceOf(
+        ValidationError,
+      );
+      expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
+
+      // ...and with it every occurrence goes, from every month page.
+      expect(await deleteAppointmentHandler(live.client, created!.id!, Y, JAN, true)).toBe(true);
       expect(await live.monthsListing(created!.id!)).toEqual([]);
     });
 
-    it('deleting an unknown id is a no-op, not an error (documents Cozi behaviour)', async () => {
+    it('a one-off needs no delete_series flag', async () => {
+      const r = await create('delete one-off', `${d(JAN, 12)}T10:00:00`, `${d(JAN, 12)}T11:00:00`);
+      expect(await deleteAppointmentHandler(live.client, r.id, Y, JAN)).toBe(true);
+      expect(await live.monthsListing(r.id)).toEqual([]);
+    });
+
+    it('an unknown id is a ResourceNotFoundError from the tool', async () => {
       await expect(
         deleteAppointmentHandler(live.client, '00000000-0000-0000-0000-000000000000', Y, MAR),
+      ).rejects.toBeInstanceOf(ResourceNotFoundError);
+    });
+
+    it('Cozi itself treats an unknown id as a no-op (documents the wire behaviour)', async () => {
+      await expect(
+        live.client.deleteAppointment('00000000-0000-0000-0000-000000000000', Y, MAR),
       ).resolves.toBe(true);
     });
   });

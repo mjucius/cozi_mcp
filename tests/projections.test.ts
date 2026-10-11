@@ -75,6 +75,46 @@ describe('slimItem', () => {
 });
 
 describe('slimAppt', () => {
+  it('a one-off carries no recurring fields at all', () => {
+    const out = slimAppt(makeAppointment());
+    expect('recurring' in out).toBe(false);
+    expect('recurrence' in out).toBe(false);
+    expect('series_end' in out).toBe(false);
+  });
+
+  // Real GET shape (tests/security-recurrence-preservation.test.ts): on a plain read
+  // Cozi may send only its wording, the end day and exdates — no `rules`.
+  it('a recurring series is flagged, with the Cozi wording and its end day', () => {
+    const a = makeAppointment();
+    a.recurrence = {
+      exdates: [{ date: '2026-05-22T10:00:00' }],
+      endDay: '2026-12-31',
+      text: ['Every weekday', ' until Dec 31, 2026'],
+    };
+    a.endDay = '2026-12-31';
+    const out = slimAppt(a);
+    expect(out.recurring).toBe(true);
+    expect(out.recurrence).toBe('Every weekday until Dec 31, 2026');
+    expect(out.series_end).toBe('2026-12-31');
+  });
+
+  it('an open-ended series with only rules is flagged without wording or end', () => {
+    const a = makeAppointment();
+    a.recurrence = { rules: [{ frequency: 'Weekly', interval: 1, byDay: ['FR'], end: {} }] };
+    const out = slimAppt(a);
+    expect(out.recurring).toBe(true);
+    expect('recurrence' in out).toBe(false);
+    expect('series_end' in out).toBe(false);
+  });
+
+  it('an empty recurrence object is not a series', () => {
+    const a = makeAppointment();
+    a.recurrence = {};
+    expect('recurring' in slimAppt(a)).toBe(false);
+    a.recurrence = { rules: [], text: [] };
+    expect('recurring' in slimAppt(a)).toBe(false);
+  });
+
   it('timed event emits ISO start/end', () => {
     const a = makeAppointment({
       startDay: '2026-05-15',
