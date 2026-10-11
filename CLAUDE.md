@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calendar) to AI assistants. Distributed three ways: MCPB bundle (drag-and-drop into Claude Desktop), Smithery cloud deployment, and `npx @mjucius/cozi-mcp` for power users.
+Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calendar) to AI assistants. Distributed two ways: MCPB bundle (drag-and-drop into Claude Desktop) and `npx @mjucius/cozi-mcp` for any other MCP client. Smithery distribution was dropped in 2.2.3 (zero installs, and its stale listings leaked into the official MCP Registry — #14); don't re-add a registry without a reason to expect users there.
 
 **v2.0 (2026-05)** is a ground-up Node/TypeScript rewrite of the prior Python v1. The runtime changed AND the tool surface was consolidated (14 → 12 tools, slim projections). See `README.md` for the v1→v2 migration table. Legacy Python source is preserved at git tag `v1.0.0`.
 
@@ -16,7 +16,6 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — tsup → `dist/server.js` + `dist/bin.js`
 - `npm run dev` — local stdio dev (needs `COZI_USERNAME` + `COZI_PASSWORD` env vars)
-- `npm run playground` — `@smithery/cli` local playground UI
 - `npm run bundle:mcpb` — produces `cozi-mcp.mcpb` at repo root
 
 
@@ -24,7 +23,7 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 
 ### Core components
 
-- `src/server.ts` — `createServer({ config })` factory. Smithery default export. Per-credentials `Map<string, CoziClient>` cache so concurrent sessions stay isolated.
+- `src/server.ts` — `createServer({ config })` factory, called by `bin.ts`. Per-credentials `Map<string, CoziClient>` cache so concurrent sessions stay isolated.
 - `src/bin.ts` — npx + MCPB stdio entry point (`#!/usr/bin/env node`). Reads `COZI_USERNAME`/`COZI_PASSWORD` env vars, instantiates `createServer`, pipes to `StdioServerTransport`.
 - `src/instructions.ts` — `SERVER_INSTRUCTIONS` constant injected into the MCP server.
 - `src/cozi/` — Inlined Cozi HTTP client. **No separate npm package.** Cozi API access lives here.
@@ -52,10 +51,9 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 
 Each user runs their own instance against their own Cozi account. No multi-tenancy.
 
-Three credential entry points, same downstream `getClient(username, password)` cache:
+Two credential entry points, same downstream `getClient(username, password)` cache:
 
 - **MCPB**: Claude Desktop prompts for `user_config.username` / `user_config.password` declared in `manifest.json`. Stored in the OS keychain. Wired to `COZI_USERNAME` / `COZI_PASSWORD` env vars at extension launch.
-- **Smithery**: `smithery.yaml` declares the `configSchema`. Smithery injects per-session config into `createServer({ config })`.
 - **npx**: `bin.ts` reads `COZI_USERNAME` / `COZI_PASSWORD` directly from `process.env`.
 
 **Never `console.log`** anywhere in the codebase. Stdio uses stdout for JSON-RPC frames; any stray write corrupts the protocol. Diagnostics → `process.stderr.write(...)` only.
@@ -102,10 +100,6 @@ Manifest at `manifest.json` (v0.4 schema). Validate with:
 ```bash
 npx -y @anthropic-ai/mcpb validate manifest.json
 ```
-
-### Smithery
-
-`smithery.yaml` declares `runtime: typescript`, `target: dist/server.js`. Pushing to `main` on `mjucius/cozi_mcp` triggers Smithery rebuild.
 
 ### npm (npx)
 

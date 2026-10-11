@@ -18,8 +18,7 @@ vitest.config.ts
 .npmignore
 .gitignore
 
-# Smithery / CI
-smithery.yaml
+# CI
 .github/
 
 # Assets: ship only the PNG icon referenced by manifest.json — the SVG is
@@ -38,7 +37,7 @@ coverage/
 dist/*.map
 dist/*.d.ts
 
-# server.js is the Smithery entry point — Claude Desktop only loads dist/bin.js
+# server.js is the npm library entry (package.json "main") — Claude Desktop only loads dist/bin.js
 dist/server.js
 
 # Dev-facing docs (not useful inside the .mcpb to end users)

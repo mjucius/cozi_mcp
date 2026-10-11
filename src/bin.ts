@@ -22,10 +22,11 @@ function parseBooleanEnv(value: string | undefined): boolean {
   return false;
 }
 
-// Don't exit on missing creds — Smithery's registry scanner spins the server
-// up to enumerate tools without auth. Tool calls themselves throw
-// AuthenticationError when getClient() sees empty creds, which is the right
-// moment for the error to surface (the user sees it via their MCP client).
+// Don't exit on missing creds — registry scanners and tools like MCP
+// Inspector spin the server up to enumerate tools without auth. Tool calls
+// themselves throw AuthenticationError when getClient() sees empty creds,
+// which is the right moment for the error to surface (the user sees it via
+// their MCP client).
 if (!username || !password) {
   const missing = [!username ? 'COZI_USERNAME' : null, !password ? 'COZI_PASSWORD' : null].filter(
     (name): name is string => name !== null,
