@@ -7,6 +7,5 @@ tsconfig.json
 .gitignore
 .github/
 manifest.json
-smithery.yaml
 *.mcpb
 coverage/

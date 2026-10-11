@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-10-11
+
+No change to the server itself — the tools, npm package and MCPB bundle behave
+exactly as in 2.2.2. This release exists so the README on npm stops pointing at a
+dead listing.
+
+### Removed
+
+- **Smithery distribution** ([#14](https://github.com/mjucius/cozi_mcp/issues/14)).
+  The original v1 hosted deployment on Smithery no longer exists, yet its listing
+  (and the official MCP Registry entry Smithery mirrored from it) still advertised
+  a remote endpoint that answers `404`. The v2 listing, published as an MCPB
+  bundle by the release workflow, recorded no installs. Rather than keep two
+  listings and a publish job in sync for no users, the `smithery-publish` job,
+  `smithery.yaml`, the `playground` script and the Smithery install docs are gone.
+  Install via the MCPB bundle or `npx @mjucius/cozi-mcp`.
+
 ## [2.2.2] - 2026-09-20
 
 ### Fixed
@@ -205,6 +222,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.2.3]: https://github.com/mjucius/cozi_mcp/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/mjucius/cozi_mcp/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/mjucius/cozi_mcp/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/mjucius/cozi_mcp/compare/v2.1.1...v2.2.0
