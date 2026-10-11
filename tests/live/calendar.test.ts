@@ -176,6 +176,38 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
 
   // ---- update ------------------------------------------------------------------
 
+  // ---- recurrence wire shape ---------------------------------------------------
+
+  describe('recurring series, as Cozi stores a fresh create', () => {
+    it('a bounded series reads back flagged, with its rule in words and its end day', async () => {
+      const s = subj('series shape');
+      await live.rawPost(Y, JAN, [{
+        itemType: 'appointment',
+        create: {
+          startDay: d(JAN, 8),
+          recurrence: { rules: [{ frequency: 'Weekly', interval: 1, byDay: ['TU'], end: { untilDay: d(FEB, 12) } }] },
+          details: { startTime: '07:00', endTime: '07:30', dateSpan: 0, subject: s, notes: '', location: '' },
+        },
+      }]);
+      const raw = await live.findRaw(Y, JAN, s);
+      expect(raw?.id).toBeTruthy();
+      live.track(raw!.id!, Y, JAN);
+
+      // Observed 2026-10-11: Cozi stores the rule and derives `endDay` and its own
+      // wording from it — itemDetails.recurrence = { rules: [...], endDay, text }.
+      const rec = raw!.itemDetails?.recurrence as { endDay?: unknown; text?: unknown; rules?: unknown };
+      expect(rec.endDay).toBe(d(FEB, 12));
+      expect(rec.text).toEqual(['Every Tuesday', ` until Feb 12, ${Y}`]);
+      expect(Array.isArray(rec.rules) && rec.rules.length).toBe(1);
+
+      const seen = (await getCalendarHandler(live.client, Y, JAN)).find((a) => a.id === raw!.id);
+      expect(seen?.recurring).toBe(true);
+      expect(seen?.recurrence).toBe(`Every Tuesday until Feb 12, ${Y}`);
+      expect(seen?.series_end).toBe(d(FEB, 12));
+      expect('skipped_days' in (seen ?? {})).toBe(false);
+    });
+  });
+
   describe('update', () => {
     it('a notes-only edit leaves day/times/dateSpan byte-identical', async () => {
       const r = await create('update notes-only', `${d(JAN, 10)}T17:00:00`, `${d(JAN, 18)}T15:00:00`, {
@@ -268,11 +300,10 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
 
       // The series is flagged as such in the projection, on every page it is listed on.
-      // (`series_end` is not asserted: whether Cozi echoes `untilDay` back as
-      // `recurrence.endDay` on a fresh create has not been observed — add it once seen.)
       for (const m of [JAN, FEB]) {
         const seen = (await getCalendarHandler(live.client, Y, m)).find((a) => a.id === created!.id);
         expect(seen?.recurring, `recurring flag on ${Y}-${m}`).toBe(true);
+        expect(seen?.series_end).toBe(d(FEB, 15));
       }
 
       await updateAppointmentHandler(live.client, created!.id!, Y, JAN, { notes: 'edited' });
