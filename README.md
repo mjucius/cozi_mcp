@@ -6,7 +6,7 @@
 
 An unofficial [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants like Claude read and update your [Cozi Family Organizer](https://www.cozi.com/) lists and calendar.
 
-Each user runs their own instance against their own Cozi account. Your credentials are stored in your MCP client's secure config (Claude Desktop's OS keychain, Smithery's encrypted session config, or your local environment) and never leave your machine — the author of this server has no access to your data.
+Each user runs their own instance against their own Cozi account. Your credentials are stored in your MCP client's secure config (Claude Desktop's OS keychain or your local environment) and never leave your machine — the author of this server has no access to your data.
 
 ## Install
 
@@ -16,15 +16,7 @@ Download the latest `.mcpb` from the [Releases page](https://github.com/mjucius/
 
 This path requires no Node, npm, or Python install on your machine.
 
-### 2. Smithery (for other MCP clients)
-
-For Cursor, ChatGPT-style clients, or web agents that connect to Smithery-hosted servers:
-
-**[Deploy on Smithery.ai →](https://smithery.ai/server/@mjucius/cozi_mcp)**
-
-Configure your Cozi credentials in the Smithery UI; each session runs in isolation with its own credential set.
-
-### 3. npx (for power users)
+### 2. npx (any other MCP client)
 
 Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP client config file):
 
@@ -83,7 +75,7 @@ counter lives in process memory, so restarting the client clears it.
 Cozi has no OAuth — username/password authentication is the only way the API supports. This server handles that fact honestly:
 
 - **Per-user, by architecture.** Each user runs their own instance against their own Cozi account. There is no shared backend, no proxy, no multi-tenant database. The author of this server never sees anyone's credentials or data.
-- **Credentials live only in your MCP client's secure config.** Claude Desktop stores them in your OS keychain. Smithery encrypts them per-session. The npx path reads them from environment variables you set yourself. Nothing is logged, written to disk by this server, or sent anywhere except `https://rest.cozi.com`.
+- **Credentials live only in your MCP client's secure config.** Claude Desktop stores them in your OS keychain. The npx path reads them from environment variables you set yourself. Nothing is logged, written to disk by this server, or sent anywhere except `https://rest.cozi.com`.
 - **API surface is constrained.** This server only contacts `rest.cozi.com` for the same endpoints the Cozi web app uses (auth, lists, calendar, family members). The full request/response code lives in `src/cozi/` — about 500 lines of TypeScript you can audit yourself.
 - **Open source, MIT licensed.** Pin a specific version (`@mjucius/cozi-mcp@2.0.0`) if you want a stable target, or fork the repo and run your own build if you want zero supply-chain trust.
 
@@ -92,7 +84,6 @@ Cozi has no OAuth — username/password authentication is the only way the API s
 This is a single-user server by design. The Cozi credential holder **is** the principal — there is no separate per-caller authentication gate, because each user runs their own instance against their own Cozi account. Concretely:
 
 - **stdio (npx / MCPB) trusts the local user.** Whoever can launch the process and read the configured `COZI_USERNAME` / `COZI_PASSWORD` (or the OS keychain entry) is treated as the account owner. The trust boundary is your machine and its user account.
-- **The Smithery HTTP deployment trusts the session-config credentials as the principal.** Whoever supplies valid Cozi credentials in the session config is the authenticated user for that session. There is no additional login layer.
 - **No multi-tenancy.** Each user configures their own instance with their own Cozi account. There is no shared backend, no tenant isolation to breach, and no per-caller authentication beyond possession of valid Cozi credentials — which is the same access model as the Cozi web app itself.
 
 Two defensive measures narrow the blast radius of that model:
@@ -103,7 +94,7 @@ Two defensive measures narrow the blast radius of that model:
 ## Tools
 
 The server exposes 12 tools by default, or 4 read-only tools when `COZI_READ_ONLY=true` (or
-Smithery/MCPB read-only config) is enabled. Returns are slim dicts with `null`/empty fields omitted.
+the MCPB read-only setting) is enabled. Returns are slim dicts with `null`/empty fields omitted.
 
 ### Family
 
@@ -141,7 +132,7 @@ When creating or updating appointments with specific attendees, call `family_mem
 
 ## Migration from v1 (Python)
 
-v2.0 is a Node/TypeScript rewrite of the previous Python implementation, distributed as MCPB / npx / Smithery. The runtime changed AND the tool surface was consolidated — if you have prompts written against v1, update them as follows:
+v2.0 is a Node/TypeScript rewrite of the previous Python implementation, distributed as MCPB and npx. The runtime changed AND the tool surface was consolidated — if you have prompts written against v1, update them as follows:
 
 | v1 (Python, 14 tools) | v2 (Node, 12 tools) |
 |---|---|
@@ -168,7 +159,6 @@ npm run test:live      # live conformance suite against real Cozi (creds.env); r
 npm run typecheck
 npm run build          # tsup → dist/
 npm run dev            # local stdio dev with COZI_USERNAME / COZI_PASSWORD env vars
-npm run playground     # @smithery/cli local playground UI
 npm run bundle:mcpb    # produces cozi-mcp.mcpb at repo root
 ```
 
@@ -177,14 +167,13 @@ The repo layout:
 ```
 cozi_mcp/
 ├── src/
-│   ├── server.ts              # MCP server factory (Smithery default export)
+│   ├── server.ts              # MCP server factory
 │   ├── bin.ts                 # npx + MCPB stdio entry point
 │   ├── instructions.ts
 │   ├── cozi/                  # Inlined Cozi HTTP client (no separate npm package)
 │   └── tools/                 # 12 MCP tools
 ├── tests/                     # vitest, mocks CoziClient at the boundary
 ├── manifest.json              # MCPB manifest (Claude Desktop)
-├── smithery.yaml              # Smithery deploy manifest
 └── package.json
 ```
 
