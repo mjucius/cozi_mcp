@@ -174,8 +174,6 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
     });
   });
 
-  // ---- update ------------------------------------------------------------------
-
   // ---- recurrence wire shape ---------------------------------------------------
 
   describe('recurring series, as Cozi stores a fresh create', () => {
@@ -207,6 +205,8 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       expect('skipped_days' in (seen ?? {})).toBe(false);
     });
   });
+
+  // ---- update ------------------------------------------------------------------
 
   describe('update', () => {
     it('a notes-only edit leaves day/times/dateSpan byte-identical', async () => {

@@ -30,6 +30,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - `update_appointment` documents that an edit to a series applies to every
   occurrence (the rule itself was already preserved since 2.1.0).
+
+## [2.3.0] - 2026-10-12
+
+### Added
+
+- **Every tool result carries the user's local date and time.** A second text
+  block after the `<cozi_data>` fence reads e.g. `Local time on the user's
+  machine: Monday 2026-03-02 21:30 (America/New_York).` An assistant whose own
+  clock is UTC used to get "tomorrow" wrong every evening, because nothing it
+  read from this server said what day it was locally. The time comes from the
+  machine running the server (your own, for MCPB and npx); the standard `TZ` env
+  var overrides the zone. The fenced block is unchanged.
+- **`today` tool** (read-only, no Cozi call) returning `{date, weekday, time,
+  timezone}`, for resolving relative dates before any other tool has been called.
+
 ## [2.2.3] - 2026-10-11
 
 No change to the server itself — the tools, npm package and MCPB bundle behave
@@ -248,6 +263,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.3.0]: https://github.com/mjucius/cozi_mcp/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/mjucius/cozi_mcp/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/mjucius/cozi_mcp/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/mjucius/cozi_mcp/compare/v2.2.0...v2.2.1

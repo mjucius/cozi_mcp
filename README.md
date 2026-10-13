@@ -39,7 +39,7 @@ Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP c
 Requires Node 20+. The package will be downloaded on first run.
 
 Set `COZI_READ_ONLY=true` to expose only read operations. In read-only mode, the server registers
-`family_members`, `get_lists`, `get_list_items`, and `get_calendar`; tools that create, update, or
+`family_members`, `get_lists`, `get_list_items`, `get_calendar`, and `today`; tools that create, update, or
 delete Cozi data are hidden from MCP clients. Omit the variable, or set it to any value other than
 `1`, `true`, `yes`, or `on`, for the default read-write tool surface.
 
@@ -93,7 +93,7 @@ Two defensive measures narrow the blast radius of that model:
 
 ## Tools
 
-The server exposes 12 tools by default, or 4 read-only tools when `COZI_READ_ONLY=true` (or
+The server exposes 13 tools by default, or 5 read-only tools when `COZI_READ_ONLY=true` (or
 the MCPB read-only setting) is enabled. Returns are slim dicts with `null`/empty fields omitted.
 
 ### Family
@@ -119,6 +119,7 @@ All item tools are hidden in read-only mode.
 
 ### Calendar
 
+- `today()` → `{date, weekday, time, timezone}` — the current local time on your machine. Every tool result also ends with this as a separate line, so the assistant resolves "tomorrow" against your clock rather than its own (often UTC). Set the standard `TZ` env var (e.g. `TZ=America/New_York`) if the server runs somewhere other than your own computer.
 - `get_calendar(year, month)` → `[{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?, recurring?, recurrence?, series_end?, skipped_days?}]`. `day` is always the start day; `end_day` appears only on multi-day events, which Cozi lists in every month they overlap (so `day` may fall outside the month you asked for). A recurring series is **one entry** with `recurring: true` — plus `recurrence` (Cozi's wording of the rule, e.g. `"Every week on Friday until Feb 15, 2026"`) and `series_end` when the series is bounded. It stands for every occurrence; individual occurrences are not listed, so the days come from the rule — minus `skipped_days`, the occurrences that were deleted one at a time in the Cozi app (nothing happens on those). Updating or deleting its `id` affects the whole series.
 - `create_appointment(subject, start, end, attendees?, all_day=false, notes='', location?)` — `start` and `end` are ISO datetimes (e.g. `'2026-06-15T10:00:00'`). For all-day events (`all_day=true`) a bare date (e.g. `'2026-06-15'`) is also accepted and `end` may equal `start`; a bare date on a timed event is an error. Put `end` on a later date for a multi-day event; the result reports the span as `end_day`. An `end` before `start` is an error.
 - `update_appointment(appointment_id, year, month, ...)` — partial update via fetch-then-merge: pass `(appointment_id, year, month)` plus any fields to change. Omitted fields are preserved. To switch a timed appointment to all-day pass `all_day=true`; to switch to timed pass new `start`/`end`. Passing `end` re-spans the event against its (possibly newly set) start day, so an `end` on a later date makes it multi-day and one on the start day collapses it back; passing `start` alone moves the event and keeps its length. A bare date is accepted for `start`/`end` when the event is, or is being made, all-day; on a timed event it is an error. On a recurring series the change applies to every occurrence; the rule is preserved.
@@ -171,7 +172,7 @@ cozi_mcp/
 │   ├── bin.ts                 # npx + MCPB stdio entry point
 │   ├── instructions.ts
 │   ├── cozi/                  # Inlined Cozi HTTP client (no separate npm package)
-│   └── tools/                 # 12 MCP tools
+│   └── tools/                 # 13 MCP tools
 ├── tests/                     # vitest, mocks CoziClient at the boundary
 ├── manifest.json              # MCPB manifest (Claude Desktop)
 └── package.json

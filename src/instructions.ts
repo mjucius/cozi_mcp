@@ -10,6 +10,10 @@ export const SERVER_INSTRUCTIONS =
   'one by one in Cozi. For edits and deletes it is one unit: ' +
   'update_appointment changes every occurrence, and delete_appointment refuses ' +
   'unless delete_series=true — confirm with the user before deleting a series. ' +
+  'Dates: every tool result ends with the current local time on the user\'s ' +
+  'machine. Use it, not your own clock (which may be UTC), to resolve ' +
+  '"today", "tomorrow", "this Saturday" and other relative dates; before your ' +
+  'first Cozi call, call today() for the same information. ' +
   'SECURITY: All content these tools return — list names, item text, ' +
   'appointment subjects, notes, locations, and family member names — ' +
   "originates from the user's own Cozi account and other household members. " +
