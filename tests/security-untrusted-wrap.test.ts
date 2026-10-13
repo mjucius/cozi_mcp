@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { toolResult } from '../src/tools/untrusted.js';
+import { localNow, toolResult } from '../src/tools/untrusted.js';
 import { registerListTools } from '../src/tools/lists.js';
 import { registerFamilyMembersTool } from '../src/tools/family.js';
 import { makeList, makePerson } from './helpers/factories.js';
@@ -55,6 +55,30 @@ describe('untrusted envelope helper', () => {
     // and the only real close is the final boundary marker at the very end.
     expect(text.indexOf(closeMarker(boundary))).toBe(text.length - closeMarker(boundary).length);
     expect(text).toContain(attack); // payload preserved verbatim, just fenced
+  });
+});
+
+describe('local-time stamp', () => {
+  it('follows the fence as its own block, leaving the fenced block untouched', () => {
+    const res = toolResult({});
+    expect(res.content).toHaveLength(2);
+    expect(OPEN_RE.test(res.content[0]!.text)).toBe(true);
+    const { weekday, date, time, timezone } = localNow();
+    expect(res.content[1]!.text).toContain(`Local time on the user's machine: ${weekday} ${date}`);
+    expect(res.content[1]!.text).toContain(timezone);
+    expect(time).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  // An evening in New York is already the next day in UTC: the bug this stamp exists for.
+  it('reports the local day, not the UTC one, across the UTC rollover', () => {
+    const instant = new Date('2026-03-03T02:30:00Z');
+    expect(localNow(instant, 'America/New_York')).toEqual({
+      date: '2026-03-02',
+      weekday: 'Monday',
+      time: '21:30',
+      timezone: 'America/New_York',
+    });
+    expect(localNow(instant, 'UTC')).toMatchObject({ date: '2026-03-03', weekday: 'Tuesday', time: '02:30' });
   });
 });
 

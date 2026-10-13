@@ -23,6 +23,7 @@ export const READ_ONLY_TOOL_NAMES = [
   'get_lists',
   'get_list_items',
   'get_calendar',
+  'today',
 ] as const;
 
 export const WRITE_TOOL_NAMES = [

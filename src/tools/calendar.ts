@@ -13,7 +13,7 @@ import {
 import { parseIsoDateTime, type ParsedDateTime } from './parsers.js';
 import { slimAppt, type SlimAppointment } from './projections.js';
 import type { ToolAccessMode } from './index.js';
-import { toolResult } from './untrusted.js';
+import { localNow, toolResult } from './untrusted.js';
 
 export async function getCalendarHandler(
   client: CoziClient,
@@ -204,6 +204,19 @@ export function registerCalendarTools(
       const result = await getCalendarHandler(await getClient(), year, month);
       return toolResult(result);
     },
+  );
+
+  server.registerTool(
+    'today',
+    {
+      title: "Today's date in the user's timezone",
+      description:
+        "Current date, weekday and time on the user's machine. Returns: {date, weekday, time, timezone}. " +
+        "Call it before turning 'tomorrow' or 'this Saturday' into the ISO dates the calendar tools take " +
+        'when you have not called another Cozi tool yet; every Cozi tool result also carries this time.',
+      inputSchema: {},
+    },
+    async () => toolResult(localNow()),
   );
 
   if (accessMode === 'read-only') {
