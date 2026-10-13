@@ -4,11 +4,13 @@ import {
   CoziClient,
   ResourceNotFoundError,
   ValidationError,
+  WriteVerificationError,
   dateSpanForLastDay,
   isRecurring,
   makeAppointment,
   type CalendarDate,
   type CoziAppointment,
+  type Occurrence,
   type TimeOfDay,
 } from '../cozi/index.js';
 import { parseIsoDateTime, type ParsedDateTime } from './parsers.js';
@@ -63,6 +65,118 @@ function assertHasTime(name: 'start' | 'end', raw: string, parsed: ParsedDateTim
   }
 }
 
+const WEEKDAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const;
+
+export interface RepeatInput {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval?: number | undefined;
+  weekdays?: (typeof WEEKDAYS)[number][] | undefined;
+  monthly_by?: 'day_of_month' | 'weekday' | undefined;
+  until?: string | undefined;
+}
+
+/**
+ * Cozi's recurrence for a `repeat`, anchored on the series' first day. Rule shapes
+ * are the Cozi web client's (bundle main.c43180f9): Daily; Weekly with `byDay`;
+ * Monthly with `byMonthDay` or an nth-weekday `byDay` such as "2TU" (-1 = last);
+ * Yearly adds `byMonth`. `end: {}` is an open-ended series.
+ */
+export function repeatRule(r: RepeatInput, startDay: CalendarDate): Record<string, unknown> {
+  const [y, m, d] = startDay.split('-').map(Number) as [number, number, number];
+  const weekday = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]!;
+  const rule: Record<string, unknown> = {
+    frequency: r.frequency[0]!.toUpperCase() + r.frequency.slice(1),
+    interval: r.interval ?? 1,
+  };
+  if (r.weekdays && r.frequency !== 'weekly') throw new ValidationError('`weekdays` applies only to a weekly repeat');
+  if (r.monthly_by && r.frequency !== 'monthly' && r.frequency !== 'yearly') {
+    throw new ValidationError('`monthly_by` applies only to a monthly or yearly repeat');
+  }
+  if (r.frequency === 'weekly') {
+    const days = r.weekdays?.length ? WEEKDAYS.filter((w) => r.weekdays!.includes(w)) : [weekday];
+    if (!days.includes(weekday)) {
+      throw new ValidationError(`A weekly repeat must include the start day's weekday (${weekday})`);
+    }
+    rule.byDay = days;
+  } else if (r.frequency !== 'daily') {
+    if (r.frequency === 'yearly') rule.byMonth = [m];
+    if (r.monthly_by === 'weekday') {
+      const nth = Math.ceil(d / 7);
+      rule.byDay = [`${nth === 5 ? -1 : nth}${weekday}`];
+    } else {
+      rule.byMonthDay = [d];
+    }
+  }
+  if (r.until !== undefined) {
+    const until = parseIsoDateTime(r.until).date;
+    if (until < startDay) throw new ValidationError(`Repeat \`until\` ${until} is before the start ${startDay}`);
+    rule.end = { untilDay: until };
+  } else {
+    rule.end = {};
+  }
+  return { rules: [rule] };
+}
+
+export type Scope = 'this' | 'this_and_following' | 'series';
+
+/** Holidays, subscribed calendars and birthdays are not ours to change. */
+function assertEditable(a: CoziAppointment, id: string): void {
+  if (a.readOnly) {
+    throw new ValidationError(
+      `Appointment '${id}' comes from a read-only calendar (a holiday or subscribed feed) and cannot be changed`,
+    );
+  }
+  if (a.itemType && a.itemType !== 'appointment') {
+    throw new ValidationError(`'${id}' is a ${a.itemType}, not an appointment; change it in the Cozi app`);
+  }
+}
+
+/**
+ * Which occurrences a write on `existing` should touch, or undefined for the whole
+ * appointment. A recurring series needs an explicit scope: an id alone names every
+ * occurrence, and get_calendar lists each occurrence under that same id, so "move
+ * this one" and "move all of them" would otherwise be the same call. The occurrence
+ * must be one Cozi lists on this page, never a day worked out from the rule.
+ */
+function resolveOccurrence(
+  existing: CoziAppointment,
+  id: string,
+  scope: Scope | undefined,
+  occurrenceDay: string | undefined,
+): Occurrence | undefined {
+  if (!isRecurring(existing)) {
+    if ((scope && scope !== 'series') || occurrenceDay) {
+      throw new ValidationError(`Appointment '${id}' is not recurring; omit \`scope\` and \`occurrence_day\``);
+    }
+    return undefined;
+  }
+  if (!scope) {
+    throw new ValidationError(
+      `Appointment '${id}' is a recurring series. Pass scope 'this' or 'this_and_following' with ` +
+        "occurrence_day (that occurrence's `day` from get_calendar), or scope 'series' for every occurrence",
+    );
+  }
+  if (scope === 'series') return undefined;
+  if (!occurrenceDay) throw new ValidationError(`scope '${scope}' needs occurrence_day`);
+  const day = parseIsoDateTime(occurrenceDay).date;
+  if (!existing.occurrenceDays.includes(day)) {
+    throw new ValidationError(
+      `${day} is not an occurrence of '${id}' on this page; pass a \`day\` get_calendar lists for it`,
+    );
+  }
+  if (scope === 'this_and_following' && day === existing.startDay) return undefined;
+  return { day, extent: scope === 'this' ? 'day' : 'forward' };
+}
+
+async function findOnPage(client: CoziClient, id: string, year: number, month: number): Promise<CoziAppointment> {
+  const existing = (await client.getCalendar(year, month)).find((a) => a.id === id);
+  if (!existing) {
+    const monthStr = String(month).padStart(2, '0');
+    throw new ResourceNotFoundError(`Appointment '${id}' not found in ${year}-${monthStr}`);
+  }
+  return existing;
+}
+
 export async function createAppointmentHandler(
   client: CoziClient,
   subject: string,
@@ -72,6 +186,7 @@ export async function createAppointmentHandler(
   allDay: boolean,
   notes: string,
   location: string | undefined,
+  extra: { repeat?: RepeatInput; reminders?: number[] } = {},
 ): Promise<SlimAppointment> {
   const startParsed = parseIsoDateTime(start);
   const endParsed = parseIsoDateTime(end);
@@ -96,6 +211,8 @@ export async function createAppointmentHandler(
     // dateSpan rather than an end date. Dropping it here is issue #8.
     dateSpan: dateSpanForLastDay(startParsed.date, endParsed.date, allDay),
   });
+  if (extra.repeat) appt.recurrence = repeatRule(extra.repeat, startParsed.date);
+  if (extra.reminders) appt.reminders = [...extra.reminders];
 
   const created = await client.createAppointment(appt);
   return slimAppt(created);
@@ -114,16 +231,22 @@ export async function updateAppointmentHandler(
     allDay?: boolean;
     notes?: string;
     location?: string;
+    scope?: Scope;
+    occurrenceDay?: string;
+    repeat?: RepeatInput;
+    reminders?: number[];
   },
 ): Promise<SlimAppointment> {
-  const page = await client.getCalendar(year, month);
-  const existing = page.find((a) => a.id === appointmentId);
-  if (!existing) {
-    const monthStr = String(month).padStart(2, '0');
-    throw new ResourceNotFoundError(`Appointment '${appointmentId}' not found in ${year}-${monthStr}`);
+  const existing = await findOnPage(client, appointmentId, year, month);
+  assertEditable(existing, appointmentId);
+  const occurrence = resolveOccurrence(existing, appointmentId, fields.scope, fields.occurrenceDay);
+  if (occurrence && fields.repeat) {
+    throw new ValidationError("`repeat` changes a whole series; pass scope 'series' to change the rule");
   }
 
-  const merged: CoziAppointment = { ...existing };
+  // An occurrence edit starts from that occurrence: same times and length as the
+  // series, on its own day. `start`/`end` below then move it as they would a one-off.
+  const merged: CoziAppointment = { ...existing, ...(occurrence ? { startDay: occurrence.day } : {}) };
 
   if (fields.subject !== undefined) merged.subject = fields.subject;
   if (fields.notes !== undefined) merged.notes = fields.notes;
@@ -172,7 +295,12 @@ export async function updateAppointmentHandler(
     merged.dateSpan += 1;
   }
 
-  const result = await client.updateAppointment(merged);
+  if (fields.repeat) merged.recurrence = repeatRule(fields.repeat, merged.startDay);
+
+  const opts: Parameters<CoziClient['updateAppointment']>[1] = {};
+  if (occurrence) opts.occurrence = occurrence;
+  if (fields.reminders) opts.reminders = [...fields.reminders];
+  const result = await client.updateAppointment(merged, opts);
   return slimAppt(result);
 }
 
@@ -181,31 +309,61 @@ export async function deleteAppointmentHandler(
   appointmentId: string,
   year: number,
   month: number,
-  deleteSeries = false,
+  opts: { scope?: Scope; occurrenceDay?: string } = {},
 ): Promise<boolean> {
   // Cozi's delete takes only an id and treats an unknown one as a silent success, so
   // the (year, month) page is read first. That tells the caller when the id is not
-  // there — and, the reason this lookup exists, whether the id names a recurring
-  // series. Cozi returns a series as ONE item, never as its occurrences, and deleting
-  // that id removes every occurrence, past and future, without any warning. The
-  // model only ever sees the slim projection, so until `recurring` was surfaced there
-  // it had no way to know it was about to do that. Refuse unless the caller says so.
-  const page = await client.getCalendar(year, month);
-  const existing = page.find((a) => a.id === appointmentId);
-  if (!existing) {
-    const monthStr = String(month).padStart(2, '0');
-    throw new ResourceNotFoundError(`Appointment '${appointmentId}' not found in ${year}-${monthStr}`);
-  }
-  if (isRecurring(existing) && !deleteSeries) {
-    // Deliberately no subject or rule text here: those are household-written content
-    // and an error message is not fenced the way a tool result is (see untrusted.ts).
-    throw new ValidationError(
-      `Appointment '${appointmentId}' is a recurring series; deleting it removes every ` +
-        'occurrence. Pass delete_series=true to delete the whole series.',
+  // there and, the reason this lookup exists, whether the id names a recurring
+  // series: deleting a series id removes every occurrence, past and future, without
+  // any warning, so a series needs an explicit scope (see resolveOccurrence).
+  const existing = await findOnPage(client, appointmentId, year, month);
+  assertEditable(existing, appointmentId);
+  const occurrence = resolveOccurrence(existing, appointmentId, opts.scope, opts.occurrenceDay);
+  await client.deleteAppointment(appointmentId, year, month, occurrence);
+  if (!occurrence) return true;
+
+  // Cozi answers 200 whatever it did, so read the series back: the one occurrence must
+  // be gone from the page, or the series must now end before it.
+  const after = (await client.getCalendar(year, month)).find((a) => a.id === appointmentId);
+  const applied =
+    !after ||
+    (occurrence.extent === 'day'
+      ? !after.occurrenceDays.includes(occurrence.day)
+      : after.endDay !== null && after.endDay < occurrence.day);
+  if (!applied) {
+    throw new WriteVerificationError(
+      `Cozi did not remove the occurrence of '${appointmentId}' on ${occurrence.day}`,
     );
   }
-  return client.deleteAppointment(appointmentId, year, month);
+  return true;
 }
+
+const RepeatSchema = z
+  .object({
+    frequency: z.enum(['daily', 'weekly', 'monthly', 'yearly']),
+    interval: z.number().int().min(1).optional(),
+    weekdays: z.array(z.enum(WEEKDAYS)).optional(),
+    monthly_by: z.enum(['day_of_month', 'weekday']).optional(),
+    until: z.string().optional(),
+  })
+  .describe(
+    'Make it repeat. `interval` 2 = every other day/week/month/year. Weekly: `weekdays` ' +
+      "(e.g. ['MO','WE']; default the start's weekday, which must be included). Monthly/yearly: " +
+      "`monthly_by` 'day_of_month' (default, e.g. the 15th) or 'weekday' (e.g. the 2nd Tuesday; a " +
+      "5th weekday means the last). `until` is the last possible day (YYYY-MM-DD); omit it to repeat forever.",
+  );
+const RemindersSchema = z
+  .array(z.number().int().min(0))
+  .describe('Reminder lead times in minutes before the start, e.g. [30, 1440]. [] clears them on an update.');
+const ScopeSchema = z
+  .enum(['this', 'this_and_following', 'series'])
+  .describe(
+    "Required for a recurring series: 'this' = only the occurrence on occurrence_day, " +
+      "'this_and_following' = that occurrence and every later one, 'series' = every occurrence.",
+  );
+const OccurrenceDaySchema = z
+  .string()
+  .describe("With scope 'this' or 'this_and_following': the occurrence's `day` as get_calendar lists it.");
 
 export function registerCalendarTools(
   server: McpServer,
@@ -266,7 +424,8 @@ export function registerCalendarTools(
         'on a timed event is an error. ' +
         'For a multi-day event put `end` on a later date — the span is preserved, and the ' +
         'result reports it as `end_day`. `end` before `start` is an error. ' +
-        'For attendees, call family_members() first and pass those `id` values.',
+        'For attendees, call family_members() first and pass those `id` values. ' +
+        'For a repeating event pass `repeat`; `start`/`end` are then its first occurrence.',
       inputSchema: {
         subject: z.string(),
         start: z.string(),
@@ -275,9 +434,11 @@ export function registerCalendarTools(
         all_day: z.boolean().optional(),
         notes: z.string().optional(),
         location: z.string().optional(),
+        repeat: RepeatSchema.optional(),
+        reminders: RemindersSchema.optional(),
       },
     },
-    async ({ subject, start, end, attendees, all_day, notes, location }) => {
+    async ({ subject, start, end, attendees, all_day, notes, location, repeat, reminders }) => {
       const result = await createAppointmentHandler(
         await getClient(),
         subject,
@@ -287,6 +448,7 @@ export function registerCalendarTools(
         all_day ?? false,
         notes ?? '',
         location,
+        { ...(repeat ? { repeat } : {}), ...(reminders ? { reminders } : {}) },
       );
       return toolResult(result);
     },
@@ -305,8 +467,12 @@ export function registerCalendarTools(
         'multi-day and one on the start day collapses it back; passing `start` alone moves the ' +
         'event and keeps its length, and all_day=true preserves the span. A bare date ' +
         "(e.g. '2026-06-15') is accepted for `start`/`end` when the event is, or is being " +
-        'made, all-day; on a timed event it is an error. On a recurring series (`recurring: true` ' +
-        'in get_calendar) the change applies to every occurrence; the recurrence rule is kept.',
+        'made, all-day; on a timed event it is an error. ' +
+        'A recurring series (`recurring: true` in get_calendar) needs `scope`: \'this\' changes only ' +
+        "the occurrence on `occurrence_day` (Cozi stores it as its own appointment, returned here), " +
+        "'this_and_following' changes it and every later one (returned as the new series), 'series' " +
+        'changes every occurrence and keeps the rule unless `repeat` replaces it. `repeat` also turns ' +
+        'a one-off into a series. Holidays, subscribed calendars and birthdays cannot be changed.',
       inputSchema: {
         appointment_id: z.string(),
         year: z.number().int(),
@@ -318,9 +484,14 @@ export function registerCalendarTools(
         all_day: z.boolean().optional(),
         notes: z.string().optional(),
         location: z.string().optional(),
+        scope: ScopeSchema.optional(),
+        occurrence_day: OccurrenceDaySchema.optional(),
+        repeat: RepeatSchema.optional(),
+        reminders: RemindersSchema.optional(),
       },
     },
-    async ({ appointment_id, year, month, subject, start, end, attendees, all_day, notes, location }) => {
+    async (args) => {
+      const { appointment_id, year, month, subject, start, end, attendees, all_day, notes, location } = args;
       const fields: Parameters<typeof updateAppointmentHandler>[4] = {};
       if (subject !== undefined) fields.subject = subject;
       if (start !== undefined) fields.start = start;
@@ -329,6 +500,10 @@ export function registerCalendarTools(
       if (all_day !== undefined) fields.allDay = all_day;
       if (notes !== undefined) fields.notes = notes;
       if (location !== undefined) fields.location = location;
+      if (args.scope !== undefined) fields.scope = args.scope;
+      if (args.occurrence_day !== undefined) fields.occurrenceDay = args.occurrence_day;
+      if (args.repeat !== undefined) fields.repeat = args.repeat;
+      if (args.reminders !== undefined) fields.reminders = args.reminders;
       const result = await updateAppointmentHandler(await getClient(), appointment_id, year, month, fields);
       return toolResult(result);
     },
@@ -340,24 +515,23 @@ export function registerCalendarTools(
       title: 'Delete an appointment',
       description:
         'Delete an appointment. Returns true on success; errors if the id is not on the ' +
-        '(year, month) page. A recurring series (`recurring: true` in get_calendar) is one ' +
-        'appointment standing for every occurrence, so deleting it removes all of them — the ' +
-        'call is refused unless `delete_series=true` is passed. Confirm with the user first.',
+        '(year, month) page. A recurring series (`recurring: true` in get_calendar) needs `scope`: ' +
+        "'this' removes only the occurrence on `occurrence_day`, 'this_and_following' ends the series " +
+        "before it, 'series' removes every occurrence, past and future. Confirm a 'series' delete with " +
+        'the user first. Holidays, subscribed calendars and birthdays cannot be deleted.',
       inputSchema: {
         appointment_id: z.string(),
         year: z.number().int(),
         month: z.number().int().min(1).max(12),
-        delete_series: z.boolean().optional(),
+        scope: ScopeSchema.optional(),
+        occurrence_day: OccurrenceDaySchema.optional(),
       },
     },
-    async ({ appointment_id, year, month, delete_series }) => {
-      const result = await deleteAppointmentHandler(
-        await getClient(),
-        appointment_id,
-        year,
-        month,
-        delete_series ?? false,
-      );
+    async ({ appointment_id, year, month, scope, occurrence_day }) => {
+      const result = await deleteAppointmentHandler(await getClient(), appointment_id, year, month, {
+        ...(scope ? { scope } : {}),
+        ...(occurrence_day ? { occurrenceDay: occurrence_day } : {}),
+      });
       return toolResult(result);
     },
   );

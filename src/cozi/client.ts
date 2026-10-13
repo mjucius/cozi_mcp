@@ -2,6 +2,8 @@ import {
   toApiCreateFormat,
   toApiDeleteFormat,
   toApiEditFormat,
+  type EditOptions,
+  type Occurrence,
 } from './appointment-payloads.js';
 import {
   APIError,
@@ -504,20 +506,19 @@ export class CoziClient {
     );
   }
 
-  async updateAppointment(appt: CoziAppointment): Promise<CoziAppointment> {
+  async updateAppointment(appt: CoziAppointment, opts: EditOptions = {}): Promise<CoziAppointment> {
     if (!appt.id) throw new ValidationError('Cannot update appointment without ID');
 
-    const [yearStr, monthStr] = appt.startDay.split('-');
-    const year = Number(yearStr);
-    const month = Number(monthStr);
+    const [year, month] = yearMonth(appt.startDay);
 
     await this.ensureAuthenticated();
     const response = await this.http.request({
       method: 'POST',
       endpoint: this.accountEndpoint(`/calendar/${year}/${month}`),
-      body: [toApiEditFormat(appt)],
+      body: [toApiEditFormat(appt, opts)],
     });
     assertNotRejected(response, 'edit', appt.id);
+    if (opts.occurrence) return this.storedOccurrenceEdit(appt, opts.occurrence);
     // As with create: prefer the stored item the response carries over the merged
     // object we sent, so the caller sees what persisted.
     if (isObj(response) && isObj(response.items)) {
@@ -527,12 +528,42 @@ export class CoziClient {
     return appt;
   }
 
-  async deleteAppointment(appointmentId: string, year: number, month: number): Promise<boolean> {
+  /**
+   * The appointment Cozi stored for an occurrence edit, which is never `appt.id`
+   * itself (live-verified 2026-10-13). For one occurrence (`day`) it is a stand-in:
+   * the series gains an exdate for that day naming the stand-in's id. For this-and-
+   * following (`forward`) it is a new series starting on the new start day, while
+   * the old one now ends the day before.
+   */
+  private async storedOccurrenceEdit(appt: CoziAppointment, occ: Occurrence): Promise<CoziAppointment> {
+    let found: CoziAppointment | undefined;
+    if (occ.extent === 'day') {
+      const series = (await this.getCalendar(...yearMonth(occ.day))).find((a) => a.id === appt.id);
+      const exdates = Array.isArray(series?.recurrence?.exdates) ? series.recurrence.exdates : [];
+      const standin = exdates.find(
+        (e): e is { date: string; standinApptId: string } =>
+          isObj(e) && typeof e.date === 'string' && e.date.startsWith(occ.day) && typeof e.standinApptId === 'string',
+      )?.standinApptId;
+      if (standin) found = (await this.getCalendar(...yearMonth(appt.startDay))).find((a) => a.id === standin);
+    } else {
+      found = (await this.getCalendar(...yearMonth(appt.startDay))).find(
+        (a) => a.id !== appt.id && a.startDay === appt.startDay && a.subject === appt.subject,
+      );
+    }
+    if (!found) {
+      throw new WriteVerificationError(
+        `Cozi accepted the edit of appointment ${appt.id} on ${occ.day}, but the changed copy could not be found`,
+      );
+    }
+    return found;
+  }
+
+  async deleteAppointment(appointmentId: string, year: number, month: number, occurrence?: Occurrence): Promise<boolean> {
     await this.ensureAuthenticated();
     const response = await this.http.request({
       method: 'POST',
       endpoint: this.accountEndpoint(`/calendar/${year}/${month}`),
-      body: [toApiDeleteFormat({ id: appointmentId } as CoziAppointment)],
+      body: [toApiDeleteFormat(appointmentId, occurrence)],
     });
     // Note: Cozi treats deleting an unknown id as a no-op success (no rejection),
     // so this catches malformed/refused deletes, not "it was already gone".
@@ -540,3 +571,8 @@ export class CoziClient {
     return true;
   }
 }
+
+const yearMonth = (day: string): [number, number] => {
+  const [y, m] = day.split('-');
+  return [Number(y), Number(m)];
+};

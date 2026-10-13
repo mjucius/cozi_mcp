@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ResourceNotFoundError,
   ValidationError,
+  WriteVerificationError,
   toApiCreateFormat,
+  toApiDeleteFormat,
   toApiEditFormat,
   type CoziAppointment,
 } from '../src/cozi/index.js';
@@ -10,7 +12,9 @@ import {
   createAppointmentHandler,
   deleteAppointmentHandler,
   getCalendarHandler,
+  repeatRule,
   updateAppointmentHandler,
+  type RepeatInput,
 } from '../src/tools/calendar.js';
 import { makeAppointment } from './helpers/factories.js';
 import { asClient, makeMockClient } from './helpers/mock-client.js';
@@ -316,12 +320,15 @@ describe('create_appointment', () => {
 });
 
 describe('delete_appointment', () => {
-  const series = (): CoziAppointment => {
-    const a = makeAppointment({ id: 'series_1', subject: 'Weekly standup' });
-    a.recurrence = { text: ['Every week on Friday'], endDay: '2026-12-31' };
-    a.endDay = '2026-12-31';
-    return a;
-  };
+  const series = (days: string[] = ['2026-05-01', '2026-05-08', '2026-05-15']): CoziAppointment =>
+    makeAppointment({
+      id: 'series_1',
+      subject: 'Weekly standup',
+      startDay: '2026-05-01',
+      recurrence: { text: ['Every week on Friday'], endDay: '2026-12-31' },
+      endDay: '2026-12-31',
+      occurrenceDays: days,
+    });
 
   it('looks the id up on the page, then passes year/month through', async () => {
     const m = makeMockClient();
@@ -331,7 +338,7 @@ describe('delete_appointment', () => {
     expect(result).toBe(true);
     expect(m.getCalendar).toHaveBeenCalledWith(2026, 5);
     expect(m.deleteAppointment).toHaveBeenCalledOnce();
-    expect(m.deleteAppointment).toHaveBeenCalledWith('appt_x', 2026, 5);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('appt_x', 2026, 5, undefined);
   });
 
   // Cozi itself treats an unknown id as a silent success; the page lookup is what
@@ -345,33 +352,189 @@ describe('delete_appointment', () => {
     expect(m.deleteAppointment).not.toHaveBeenCalled();
   });
 
-  it('a recurring series is refused by default and nothing is sent', async () => {
+  it('a recurring series without a scope is refused and nothing is sent', async () => {
     const m = makeMockClient();
     m.getCalendar.mockResolvedValue([series()]);
     const err = await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ValidationError);
     expect((err as Error).message).toContain('recurring series');
-    expect((err as Error).message).toContain('delete_series=true');
+    expect((err as Error).message).toContain("scope 'series'");
     // Household-written content must not leak into an unfenced error message.
     expect((err as Error).message).not.toContain('Weekly standup');
     expect((err as Error).message).not.toContain('Every week');
     expect(m.deleteAppointment).not.toHaveBeenCalled();
   });
 
-  it('a recurring series is deleted when delete_series=true', async () => {
+  it("scope 'series' deletes the whole series", async () => {
     const m = makeMockClient();
     m.getCalendar.mockResolvedValue([series()]);
     m.deleteAppointment.mockResolvedValue(true);
-    expect(await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, true)).toBe(true);
-    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5);
+    expect(await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, { scope: 'series' })).toBe(true);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, undefined);
   });
 
-  it('delete_series=true on a one-off is harmless', async () => {
+  it("scope 'this' deletes one listed occurrence and checks it is gone", async () => {
     const m = makeMockClient();
-    m.getCalendar.mockResolvedValue([makeAppointment({ id: 'appt_x' })]);
+    m.getCalendar.mockResolvedValueOnce([series()]).mockResolvedValueOnce([series(['2026-05-01', '2026-05-15'])]);
     m.deleteAppointment.mockResolvedValue(true);
-    expect(await deleteAppointmentHandler(asClient(m), 'appt_x', 2026, 5, true)).toBe(true);
-    expect(m.deleteAppointment).toHaveBeenCalledWith('appt_x', 2026, 5);
+    const ok = await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, {
+      scope: 'this',
+      occurrenceDay: '2026-05-08',
+    });
+    expect(ok).toBe(true);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, { day: '2026-05-08', extent: 'day' });
+  });
+
+  it('an occurrence still listed after the delete is a WriteVerificationError', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    m.deleteAppointment.mockResolvedValue(true);
+    await expect(
+      deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, { scope: 'this', occurrenceDay: '2026-05-08' }),
+    ).rejects.toBeInstanceOf(WriteVerificationError);
+  });
+
+  it('a day that is not a listed occurrence is refused and nothing is sent', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    await expect(
+      deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, { scope: 'this', occurrenceDay: '2026-05-09' }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(m.deleteAppointment).not.toHaveBeenCalled();
+  });
+
+  it("'this_and_following' sends extent forward and checks the series now ends before the day", async () => {
+    const m = makeMockClient();
+    const shortened = { ...series(['2026-05-01']), endDay: '2026-05-07' };
+    m.getCalendar.mockResolvedValueOnce([series()]).mockResolvedValueOnce([shortened]);
+    m.deleteAppointment.mockResolvedValue(true);
+    await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, {
+      scope: 'this_and_following',
+      occurrenceDay: '2026-05-08',
+    });
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, { day: '2026-05-08', extent: 'forward' });
+  });
+
+  it("'this_and_following' from the first occurrence is the whole series", async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    m.deleteAppointment.mockResolvedValue(true);
+    await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, {
+      scope: 'this_and_following',
+      occurrenceDay: '2026-05-01',
+    });
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, undefined);
+  });
+
+  it('refuses holidays, subscribed calendars, birthdays and a scope on a one-off', async () => {
+    const cases: Array<[CoziAppointment, Parameters<typeof deleteAppointmentHandler>[4]]> = [
+      [makeAppointment({ id: 'x', readOnly: true }), {}],
+      [makeAppointment({ id: 'x', itemType: 'birthday' }), {}],
+      [makeAppointment({ id: 'x' }), { scope: 'this', occurrenceDay: '2026-05-15' }],
+    ];
+    for (const [appt, opts] of cases) {
+      const m = makeMockClient();
+      m.getCalendar.mockResolvedValue([appt]);
+      await expect(deleteAppointmentHandler(asClient(m), 'x', 2026, 5, opts)).rejects.toBeInstanceOf(ValidationError);
+      expect(m.deleteAppointment).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe('update_appointment on a recurring series', () => {
+  const series = (): CoziAppointment =>
+    makeAppointment({
+      id: 'series_1',
+      startDay: '2026-05-01',
+      recurrence: { rules: [{ frequency: 'Weekly', interval: 1, byDay: ['FR'], end: {} }] },
+      occurrenceDays: ['2026-05-01', '2026-05-08'],
+    });
+
+  it('needs a scope', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    await expect(updateAppointmentHandler(asClient(m), 'series_1', 2026, 5, { notes: 'x' })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    expect(m.updateAppointment).not.toHaveBeenCalled();
+  });
+
+  it("scope 'this' edits from the occurrence's own day and sends the occurrence", async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    m.updateAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'standin', recurrence: null }));
+    const out = await updateAppointmentHandler(asClient(m), 'series_1', 2026, 5, {
+      scope: 'this',
+      occurrenceDay: '2026-05-08',
+      start: '2026-05-09T10:00:00',
+    });
+    const [sent, opts] = m.updateAppointment.mock.calls[0] as [CoziAppointment, { occurrence?: unknown }];
+    expect(sent.startDay).toBe('2026-05-09');
+    expect(opts.occurrence).toEqual({ day: '2026-05-08', extent: 'day' });
+    expect(out.id).toBe('standin');
+  });
+
+  it('refuses `repeat` on a single occurrence', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    await expect(
+      updateAppointmentHandler(asClient(m), 'series_1', 2026, 5, {
+        scope: 'this',
+        occurrenceDay: '2026-05-08',
+        repeat: { frequency: 'daily' },
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('passes reminders through only when given, and `repeat` turns a one-off into a series', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ id: 'a', startDay: '2026-05-15' })]);
+    m.updateAppointment.mockImplementation(async (a: CoziAppointment) => a);
+    await updateAppointmentHandler(asClient(m), 'a', 2026, 5, { notes: 'x' });
+    expect(m.updateAppointment.mock.calls[0]?.[1]).toEqual({});
+    await updateAppointmentHandler(asClient(m), 'a', 2026, 5, { reminders: [], repeat: { frequency: 'monthly' } });
+    const [sent, opts] = m.updateAppointment.mock.calls[1] as [CoziAppointment, { reminders?: number[] }];
+    expect(opts.reminders).toEqual([]);
+    expect(sent.recurrence).toEqual({ rules: [{ frequency: 'Monthly', interval: 1, byMonthDay: [15], end: {} }] });
+  });
+
+  it('refuses read-only items and birthdays', async () => {
+    for (const appt of [makeAppointment({ id: 'x', readOnly: true }), makeAppointment({ id: 'x', itemType: 'birthday' })]) {
+      const m = makeMockClient();
+      m.getCalendar.mockResolvedValue([appt]);
+      await expect(updateAppointmentHandler(asClient(m), 'x', 2026, 5, { notes: 'n' })).rejects.toBeInstanceOf(
+        ValidationError,
+      );
+      expect(m.updateAppointment).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe('repeatRule', () => {
+  const rule = (r: RepeatInput, start = '2019-01-29') => (repeatRule(r, start).rules as unknown[])[0];
+
+  it('builds the Cozi web client rule shapes', () => {
+    expect(rule({ frequency: 'daily', interval: 2 })).toEqual({ frequency: 'Daily', interval: 2, end: {} });
+    expect(rule({ frequency: 'weekly' })).toEqual({ frequency: 'Weekly', interval: 1, byDay: ['TU'], end: {} });
+    expect(rule({ frequency: 'weekly', weekdays: ['TH', 'TU'], until: '2019-03-01' })).toEqual({
+      frequency: 'Weekly', interval: 1, byDay: ['TU', 'TH'], end: { untilDay: '2019-03-01' },
+    });
+    expect(rule({ frequency: 'monthly' })).toEqual({ frequency: 'Monthly', interval: 1, byMonthDay: [29], end: {} });
+    // 2019-01-29 is the 5th Tuesday, which Cozi spells as the last one.
+    expect(rule({ frequency: 'monthly', monthly_by: 'weekday' })).toEqual({
+      frequency: 'Monthly', interval: 1, byDay: ['-1TU'], end: {},
+    });
+    expect(rule({ frequency: 'monthly', monthly_by: 'weekday' }, '2019-01-08')).toMatchObject({ byDay: ['2TU'] });
+    expect(rule({ frequency: 'yearly' })).toEqual({
+      frequency: 'Yearly', interval: 1, byMonth: [1], byMonthDay: [29], end: {},
+    });
+  });
+
+  it('rejects rules that do not fit the start day', () => {
+    expect(() => rule({ frequency: 'weekly', weekdays: ['MO'] })).toThrow(ValidationError);
+    expect(() => rule({ frequency: 'daily', weekdays: ['TU'] })).toThrow(ValidationError);
+    expect(() => rule({ frequency: 'weekly', monthly_by: 'weekday' })).toThrow(ValidationError);
+    expect(() => rule({ frequency: 'daily', until: '2019-01-01' })).toThrow(ValidationError);
   });
 });
 
@@ -684,5 +847,27 @@ describe('all-day appointments on the wire', () => {
       edit: { details: Record<string, unknown> };
     };
     expect(edit.edit.details.dateSpan).toBe(4);
+  });
+});
+
+describe('appointment payloads: occurrences and reminders', () => {
+  it('puts selectedDay/extent beside the operation and reminders at the edit level', () => {
+    const a = makeAppointment({ id: 'series_1', startDay: '2026-05-09' });
+    const edit = toApiEditFormat(a, { occurrence: { day: '2026-05-08', extent: 'day' }, reminders: [30] });
+    expect(edit).toMatchObject({ itemType: 'appointment', selectedDay: '2026-05-08', extent: 'day' });
+    expect((edit.edit as Record<string, unknown>).reminders).toEqual([{ minutesBefore: 30 }]);
+    expect('reminders' in (toApiEditFormat(a).edit as Record<string, unknown>)).toBe(false);
+    expect(toApiDeleteFormat('series_1', { day: '2026-05-08', extent: 'forward' })).toEqual({
+      itemType: 'appointment', selectedDay: '2026-05-08', extent: 'forward', delete: { id: 'series_1' },
+    });
+  });
+
+  it('sends recurrence and reminders on create only when set', () => {
+    const plain = toApiCreateFormat(makeAppointment()).create as Record<string, unknown>;
+    expect('recurrence' in plain || 'reminders' in plain).toBe(false);
+    const rec = { rules: [{ frequency: 'Daily', interval: 1, end: {} }] };
+    const full = toApiCreateFormat(makeAppointment({ recurrence: rec, reminders: [15] })).create as Record<string, unknown>;
+    expect(full.recurrence).toEqual(rec);
+    expect(full.reminders).toEqual([{ minutesBefore: 15 }]);
   });
 });

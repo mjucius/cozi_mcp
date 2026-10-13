@@ -8,6 +8,25 @@ import { CoziAppointment, formatTimeOfDay } from './models.js';
 // which meant every all_day=true create and every switch-to-all-day edit failed.
 const time = (t: CoziAppointment['startTime']): string => (t ? formatTimeOfDay(t) : '00:00');
 
+/**
+ * Which occurrences of a recurring series an edit or delete touches. Omitted means
+ * the whole series. `day` is one occurrence only: Cozi excludes it from the series
+ * and, on an edit, stores the changed copy as its own appointment. `forward` is that
+ * occurrence and every later one: Cozi ends the series the day before and, on an
+ * edit, starts a new series there (all live-verified 2026-10-13). This is the Cozi
+ * web client's own shape (bundle main.c43180f9): `selectedDay` + `extent` beside the
+ * operation.
+ */
+export interface Occurrence {
+  day: string;
+  extent: 'day' | 'forward';
+}
+
+const occurrenceFields = (o?: Occurrence) => (o ? { selectedDay: o.day, extent: o.extent } : {});
+
+// Top-level `reminders` as Cozi stores them; `[]` clears them on an edit.
+const reminderList = (mins: number[]) => mins.map((minutesBefore) => ({ minutesBefore }));
+
 // `dateSpan` goes out exactly as the model carries it. It is a day offset (see
 // models.ts): 0 for a same-day timed event, 1 for a one-day all-day event. Clamping
 // it to >= 1 here is what created issue #12 — every timed appointment gained a day.
@@ -17,6 +36,8 @@ export function toApiCreateFormat(a: CoziAppointment): Record<string, unknown> {
     itemType: 'appointment',
     create: {
       startDay: a.startDay,
+      ...(a.recurrence != null ? { recurrence: a.recurrence } : {}),
+      ...(a.reminders != null ? { reminders: reminderList(a.reminders) } : {}),
       details: {
         startTime: time(a.startTime),
         endTime: time(a.endTime),
@@ -30,14 +51,20 @@ export function toApiCreateFormat(a: CoziAppointment): Record<string, unknown> {
   };
 }
 
-export function toApiEditFormat(a: CoziAppointment): Record<string, unknown> {
+export interface EditOptions {
+  occurrence?: Occurrence;
+  /** Replace the reminders (`[]` clears them). Omitted leaves them as they are. */
+  reminders?: number[];
+}
+
+export function toApiEditFormat(a: CoziAppointment, opts: EditOptions = {}): Record<string, unknown> {
   if (!a.id) throw new ValidationError('Cannot edit appointment without ID');
   // Cozi's calendar edit is a FULL REPLACE: any field omitted from the payload is
   // erased server-side. Re-send the recurrence rule the read path preserved so an
   // unrelated edit (e.g. notes) does not strip a recurring appointment's schedule.
   // Top-level `reminders` ([{minutesBefore}]) are the exception: the web client
   // re-sends them, but Cozi keeps them when omitted (live-verified 2026-10-13), so
-  // they are not read or sent here.
+  // they go out only when the caller is changing them.
   //
   // Wire shape captured from the real Cozi web client on 2026-07-24 (DevTools):
   //   {"itemType":"appointment","edit":{
@@ -59,10 +86,12 @@ export function toApiEditFormat(a: CoziAppointment): Record<string, unknown> {
   // client does not send it either. Optimistic concurrency is not available here.
   return {
     itemType: 'appointment',
+    ...occurrenceFields(opts.occurrence),
     edit: {
       id: a.id,
       startDay: a.startDay,
       ...(a.recurrence != null ? { recurrence: a.recurrence } : {}),
+      ...(opts.reminders !== undefined ? { reminders: reminderList(opts.reminders) } : {}),
       details: {
         startTime: time(a.startTime),
         endTime: time(a.endTime),
@@ -76,7 +105,8 @@ export function toApiEditFormat(a: CoziAppointment): Record<string, unknown> {
   };
 }
 
-export function toApiDeleteFormat(a: CoziAppointment): Record<string, unknown> {
-  if (!a.id) throw new ValidationError('Cannot delete appointment without ID');
-  return { itemType: 'appointment', delete: { id: a.id } };
+export function toApiDeleteFormat(id: string, occurrence?: Occurrence): Record<string, unknown> {
+  if (!id) throw new ValidationError('Cannot delete appointment without ID');
+  // The web client also sends `version: itemVersion`; Cozi does not need it (live-verified).
+  return { itemType: 'appointment', ...occurrenceFields(occurrence), delete: { id } };
 }
