@@ -4,7 +4,12 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.0] - 2026-10-13
+
+Recurring series are now visible as series, and deleting one takes an explicit
+flag. Minor rather than patch because `delete_appointment` behaves differently by
+default: a caller that deleted a series, or an id that is not on the page, now
+gets an error instead of a silent success. Thanks to @pawboelnielsen (#15).
 
 ### Fixed
 
@@ -263,6 +268,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.4.0]: https://github.com/mjucius/cozi_mcp/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/mjucius/cozi_mcp/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/mjucius/cozi_mcp/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/mjucius/cozi_mcp/compare/v2.2.1...v2.2.2
