@@ -28,9 +28,15 @@ import {
 const BASE_URL = 'https://rest.cozi.com';
 const API_VERSION = '2004';
 const AUTH_VERSION = '2207';
-// Required by Cloudflare/Cozi as of 2026-04 (Wetzel402/py-cozi PR #3). The exact
-// build number is loose — any "coziwc|vNNN_production" value is accepted.
+const REAUTH_VERSION = '2111';
+// Required on login by Cloudflare/Cozi as of 2026-04 (Wetzel402/py-cozi PR #3). The
+// exact build number is loose — any "coziwc|vNNN_production" value is accepted. The
+// Cozi web client (bundle main.c43180f9, 2026-10-13) sends it on EVERY request, not
+// just login, so we do too: Cozi enforcing it on login without notice broke every
+// third-party client once, and resource calls are the obvious next place.
 const APIKEY = 'coziwc|v251_production';
+// Refresh the token this long before Cozi says it expires.
+const REFRESH_MARGIN_MS = 60_000;
 
 interface AuthResponse {
   accessToken?: string;
@@ -90,6 +96,7 @@ export class CoziClient {
   private accessToken: string | null = null;
   private accountId: string | null = null;
   private tokenExpiresIn: number | null = null;
+  private tokenIssuedAtMs = 0;
   private authenticated = false;
   private readonly http: HttpClient;
 
@@ -99,10 +106,8 @@ export class CoziClient {
   ) {
     this.http = new HttpClient({
       baseUrl: BASE_URL,
-      reauthenticate: async () => {
-        this.authenticated = false;
-        await this.authenticate();
-      },
+      defaultParams: { apikey: APIKEY },
+      reauthenticate: () => this.refresh(),
       authHeader: () => (this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
     });
   }
@@ -111,11 +116,39 @@ export class CoziClient {
     const response = (await this.http.request({
       method: 'POST',
       endpoint: `/api/ext/${AUTH_VERSION}/auth/login`,
-      params: { apikey: APIKEY },
       body: { username: this.username, password: this.password, issueRefresh: true },
       requireAuth: false,
     })) as AuthResponse;
+    this.acceptToken(response);
+  }
 
+  /**
+   * Get a fresh access token without re-sending the password, the way the Cozi web
+   * client does (bundle main.c43180f9, 2026-10-13): login with `issueRefresh` sets a
+   * `cozi_refresh` cookie, which the cookie jar keeps, and an empty POST to `reauth`
+   * trades it for a new token. Verified live 2026-10-13: 200 with the same response
+   * shape as login. Falls back to a full login if the refresh is refused or the
+   * session never had one.
+   */
+  private async refresh(): Promise<void> {
+    this.authenticated = false;
+    if (this.accountId) {
+      try {
+        const response = (await this.http.request({
+          method: 'POST',
+          endpoint: `/api/ext/${REAUTH_VERSION}/${this.accountId}/auth/reauth`,
+          requireAuth: false,
+        })) as AuthResponse;
+        this.acceptToken(response);
+        return;
+      } catch {
+        // fall through to the password
+      }
+    }
+    await this.authenticate();
+  }
+
+  private acceptToken(response: AuthResponse): void {
     this.accessToken = response.accessToken ?? null;
     this.accountId = response.accountId ?? null;
     this.tokenExpiresIn = response.expiresIn ?? null;
@@ -126,6 +159,7 @@ export class CoziClient {
           [!this.accessToken && 'accessToken', !this.accountId && 'accountId'].filter(Boolean).join(' and '),
       );
     }
+    this.tokenIssuedAtMs = Date.now();
     this.authenticated = true;
   }
 
@@ -134,7 +168,9 @@ export class CoziClient {
   }
 
   private async ensureAuthenticated(): Promise<void> {
-    if (!this.authenticated) await this.authenticate();
+    if (!this.authenticated) return this.authenticate();
+    const life = this.tokenLifetimeMs;
+    if (life != null && Date.now() - this.tokenIssuedAtMs >= life - REFRESH_MARGIN_MS) await this.refresh();
   }
 
   private accountEndpoint(suffix: string): string {
