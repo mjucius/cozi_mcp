@@ -178,6 +178,31 @@ function resolveOccurrence(
   return { day, extent: scope === 'this' ? 'day' : 'forward' };
 }
 
+/**
+ * Who a change notification goes to, mirroring the Cozi web client: the attendees
+ * who have Cozi's calendar notifications switched on (a delete with no attendees
+ * falls back to the whole family, as the web client does). Refuses rather than
+ * silently notifying nobody.
+ */
+async function notifyRecipients(client: CoziClient, attendees: string[], everyoneIfNone: boolean): Promise<string[]> {
+  const people = await client.getFamilyMembers();
+  const pool = attendees.length ? attendees : everyoneIfNone ? people.map((p) => p.id) : [];
+  const reachable = new Set(
+    people
+      .filter((p) => (p.notifiableFeatures ? p.notifiableFeatures.includes('calendarItemNotification') : p.notifiable))
+      .map((p) => p.id),
+  );
+  const ids = pool.filter((id) => reachable.has(id));
+  if (!ids.length) {
+    throw new ValidationError(
+      attendees.length
+        ? 'notify: none of the attendees has Cozi calendar notifications switched on'
+        : 'notify: an appointment with no attendees has nobody to notify; add attendees first',
+    );
+  }
+  return ids;
+}
+
 async function findOnPage(client: CoziClient, id: string, year: number, month: number): Promise<CoziAppointment> {
   const existing = (await client.getCalendar(year, month)).find((a) => a.id === id);
   if (!existing) {
@@ -196,7 +221,7 @@ export async function createAppointmentHandler(
   allDay: boolean,
   notes: string,
   location: string | undefined,
-  extra: { repeat?: RepeatInput; reminders?: number[] } = {},
+  extra: { repeat?: RepeatInput; reminders?: number[]; notify?: boolean } = {},
 ): Promise<SlimAppointment> {
   const startParsed = parseIsoDateTime(start);
   const endParsed = parseIsoDateTime(end);
@@ -223,8 +248,9 @@ export async function createAppointmentHandler(
   });
   if (extra.repeat) appt.recurrence = repeatRule(extra.repeat, startParsed.date);
   if (extra.reminders) appt.reminders = [...extra.reminders];
+  const notify = extra.notify ? await notifyRecipients(client, appt.attendees, false) : undefined;
 
-  const created = await client.createAppointment(appt);
+  const created = await client.createAppointment(appt, notify);
   return slimAppt(created);
 }
 
@@ -245,6 +271,7 @@ export async function updateAppointmentHandler(
     occurrenceDay?: string;
     repeat?: RepeatInput;
     reminders?: number[];
+    notify?: boolean;
   },
 ): Promise<SlimAppointment> {
   const existing = await findOnPage(client, appointmentId, year, month);
@@ -310,6 +337,7 @@ export async function updateAppointmentHandler(
   const opts: Parameters<CoziClient['updateAppointment']>[1] = {};
   if (occurrence) opts.occurrence = occurrence;
   if (fields.reminders) opts.reminders = [...fields.reminders];
+  if (fields.notify) opts.notifyPersons = await notifyRecipients(client, merged.attendees, false);
   const result = await client.updateAppointment(merged, opts);
   return slimAppt(result);
 }
@@ -319,7 +347,7 @@ export async function deleteAppointmentHandler(
   appointmentId: string,
   year: number,
   month: number,
-  opts: { scope?: Scope; occurrenceDay?: string } = {},
+  opts: { scope?: Scope; occurrenceDay?: string; notify?: boolean } = {},
 ): Promise<boolean> {
   // Cozi's delete takes only an id and treats an unknown one as a silent success, so
   // the (year, month) page is read first. That tells the caller when the id is not
@@ -329,7 +357,8 @@ export async function deleteAppointmentHandler(
   const existing = await findOnPage(client, appointmentId, year, month);
   assertEditable(existing, appointmentId);
   const occurrence = resolveOccurrence(existing, appointmentId, opts.scope, opts.occurrenceDay);
-  await client.deleteAppointment(appointmentId, year, month, occurrence);
+  const notify = opts.notify ? await notifyRecipients(client, existing.attendees, true) : undefined;
+  await client.deleteAppointment(appointmentId, year, month, occurrence, notify);
   if (!occurrence) return true;
 
   // Cozi answers 200 whatever it did, so read the series back: the one occurrence must
@@ -365,6 +394,12 @@ const RepeatSchema = z
 const RemindersSchema = z
   .array(z.number().int().min(0))
   .describe('Reminder lead times in minutes before the start, e.g. [30, 1440]. [] clears them on an update.');
+const NotifySchema = z
+  .boolean()
+  .describe(
+    "Send Cozi's change notification to the attendees who have notifications on, like the Cozi app's " +
+      "'notify' option. Off by default; only when the user asks for it.",
+  );
 const ScopeSchema = z
   .enum(['this', 'this_and_following', 'series'])
   .describe(
@@ -463,9 +498,10 @@ export function registerCalendarTools(
         location: z.string().optional(),
         repeat: RepeatSchema.optional(),
         reminders: RemindersSchema.optional(),
+        notify: NotifySchema.optional(),
       },
     },
-    async ({ subject, start, end, attendees, all_day, notes, location, repeat, reminders }) => {
+    async ({ subject, start, end, attendees, all_day, notes, location, repeat, reminders, notify }) => {
       const result = await createAppointmentHandler(
         await getClient(),
         subject,
@@ -475,7 +511,7 @@ export function registerCalendarTools(
         all_day ?? false,
         notes ?? '',
         location,
-        { ...(repeat ? { repeat } : {}), ...(reminders ? { reminders } : {}) },
+        { ...(repeat ? { repeat } : {}), ...(reminders ? { reminders } : {}), ...(notify ? { notify } : {}) },
       );
       return toolResult(result);
     },
@@ -515,6 +551,7 @@ export function registerCalendarTools(
         occurrence_day: OccurrenceDaySchema.optional(),
         repeat: RepeatSchema.optional(),
         reminders: RemindersSchema.optional(),
+        notify: NotifySchema.optional(),
       },
     },
     async (args) => {
@@ -531,6 +568,7 @@ export function registerCalendarTools(
       if (args.occurrence_day !== undefined) fields.occurrenceDay = args.occurrence_day;
       if (args.repeat !== undefined) fields.repeat = args.repeat;
       if (args.reminders !== undefined) fields.reminders = args.reminders;
+      if (args.notify !== undefined) fields.notify = args.notify;
       const result = await updateAppointmentHandler(await getClient(), appointment_id, year, month, fields);
       return toolResult(result);
     },
@@ -552,12 +590,14 @@ export function registerCalendarTools(
         month: z.number().int().min(1).max(12),
         scope: ScopeSchema.optional(),
         occurrence_day: OccurrenceDaySchema.optional(),
+        notify: NotifySchema.optional(),
       },
     },
-    async ({ appointment_id, year, month, scope, occurrence_day }) => {
+    async ({ appointment_id, year, month, scope, occurrence_day, notify }) => {
       const result = await deleteAppointmentHandler(await getClient(), appointment_id, year, month, {
         ...(scope ? { scope } : {}),
         ...(occurrence_day ? { occurrenceDay: occurrence_day } : {}),
+        ...(notify ? { notify } : {}),
       });
       return toolResult(result);
     },

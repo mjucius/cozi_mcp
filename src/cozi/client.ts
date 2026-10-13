@@ -512,7 +512,7 @@ export class CoziClient {
     }
   }
 
-  async createAppointment(appt: CoziAppointment): Promise<CoziAppointment> {
+  async createAppointment(appt: CoziAppointment, notifyPersons?: string[]): Promise<CoziAppointment> {
     if (!appt.subject.trim()) throw new ValidationError('Appointment subject cannot be empty');
 
     const [yearStr, monthStr] = appt.startDay.split('-');
@@ -523,7 +523,7 @@ export class CoziClient {
     const response = await this.http.request({
       method: 'POST',
       endpoint: this.accountEndpoint(`/calendar/${year}/${month}`),
-      body: [toApiCreateFormat(appt)],
+      body: [toApiCreateFormat(appt, notifyPersons)],
     });
     assertNotRejected(response, 'create');
 
@@ -611,12 +611,18 @@ export class CoziClient {
     return found;
   }
 
-  async deleteAppointment(appointmentId: string, year: number, month: number, occurrence?: Occurrence): Promise<boolean> {
+  async deleteAppointment(
+    appointmentId: string,
+    year: number,
+    month: number,
+    occurrence?: Occurrence,
+    notifyPersons?: string[],
+  ): Promise<boolean> {
     await this.ensureAuthenticated();
     const response = await this.http.request({
       method: 'POST',
       endpoint: this.accountEndpoint(`/calendar/${year}/${month}`),
-      body: [toApiDeleteFormat(appointmentId, occurrence)],
+      body: [toApiDeleteFormat(appointmentId, occurrence, notifyPersons)],
     });
     // Note: Cozi treats deleting an unknown id as a no-op success (no rejection),
     // so this catches malformed/refused deletes, not "it was already gone".

@@ -24,6 +24,10 @@ export interface Occurrence {
 
 const occurrenceFields = (o?: Occurrence) => (o ? { selectedDay: o.day, extent: o.extent } : {});
 
+// Family members Cozi should send a change notification to, beside the operation,
+// as the web client does when its "notify" box is ticked (bundle main.c43180f9).
+const notifyFields = (ids?: string[]) => (ids?.length ? { notifyPersons: ids } : {});
+
 // Top-level `reminders` as Cozi stores them; `[]` clears them on an edit.
 const reminderList = (mins: number[]) => mins.map((minutesBefore) => ({ minutesBefore }));
 
@@ -31,9 +35,10 @@ const reminderList = (mins: number[]) => mins.map((minutesBefore) => ({ minutesB
 // models.ts): 0 for a same-day timed event, 1 for a one-day all-day event. Clamping
 // it to >= 1 here is what created issue #12 — every timed appointment gained a day.
 
-export function toApiCreateFormat(a: CoziAppointment): Record<string, unknown> {
+export function toApiCreateFormat(a: CoziAppointment, notifyPersons?: string[]): Record<string, unknown> {
   return {
     itemType: 'appointment',
+    ...notifyFields(notifyPersons),
     create: {
       startDay: a.startDay,
       ...(a.recurrence != null ? { recurrence: a.recurrence } : {}),
@@ -55,6 +60,7 @@ export interface EditOptions {
   occurrence?: Occurrence;
   /** Replace the reminders (`[]` clears them). Omitted leaves them as they are. */
   reminders?: number[];
+  notifyPersons?: string[];
 }
 
 export function toApiEditFormat(a: CoziAppointment, opts: EditOptions = {}): Record<string, unknown> {
@@ -87,6 +93,7 @@ export function toApiEditFormat(a: CoziAppointment, opts: EditOptions = {}): Rec
   return {
     itemType: 'appointment',
     ...occurrenceFields(opts.occurrence),
+    ...notifyFields(opts.notifyPersons),
     edit: {
       id: a.id,
       startDay: a.startDay,
@@ -105,8 +112,8 @@ export function toApiEditFormat(a: CoziAppointment, opts: EditOptions = {}): Rec
   };
 }
 
-export function toApiDeleteFormat(id: string, occurrence?: Occurrence): Record<string, unknown> {
+export function toApiDeleteFormat(id: string, occurrence?: Occurrence, notifyPersons?: string[]): Record<string, unknown> {
   if (!id) throw new ValidationError('Cannot delete appointment without ID');
   // The web client also sends `version: itemVersion`; Cozi does not need it (live-verified).
-  return { itemType: 'appointment', ...occurrenceFields(occurrence), delete: { id } };
+  return { itemType: 'appointment', ...occurrenceFields(occurrence), ...notifyFields(notifyPersons), delete: { id } };
 }

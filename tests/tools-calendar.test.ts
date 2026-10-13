@@ -19,7 +19,7 @@ import {
   updateAppointmentHandler,
   type RepeatInput,
 } from '../src/tools/calendar.js';
-import { makeAppointment } from './helpers/factories.js';
+import { makeAppointment, makePerson } from './helpers/factories.js';
 import { asClient, makeMockClient } from './helpers/mock-client.js';
 
 describe('get_calendar', () => {
@@ -341,7 +341,7 @@ describe('delete_appointment', () => {
     expect(result).toBe(true);
     expect(m.getCalendar).toHaveBeenCalledWith(2026, 5);
     expect(m.deleteAppointment).toHaveBeenCalledOnce();
-    expect(m.deleteAppointment).toHaveBeenCalledWith('appt_x', 2026, 5, undefined);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('appt_x', 2026, 5, undefined, undefined);
   });
 
   // Cozi itself treats an unknown id as a silent success; the page lookup is what
@@ -373,7 +373,7 @@ describe('delete_appointment', () => {
     m.getCalendar.mockResolvedValue([series()]);
     m.deleteAppointment.mockResolvedValue(true);
     expect(await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, { scope: 'series' })).toBe(true);
-    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, undefined);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, undefined, undefined);
   });
 
   it("scope 'this' deletes one listed occurrence and checks it is gone", async () => {
@@ -385,7 +385,7 @@ describe('delete_appointment', () => {
       occurrenceDay: '2026-05-08',
     });
     expect(ok).toBe(true);
-    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, { day: '2026-05-08', extent: 'day' });
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, { day: '2026-05-08', extent: 'day' }, undefined);
   });
 
   it('an occurrence still listed after the delete is a WriteVerificationError', async () => {
@@ -415,7 +415,7 @@ describe('delete_appointment', () => {
       scope: 'this_and_following',
       occurrenceDay: '2026-05-08',
     });
-    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, { day: '2026-05-08', extent: 'forward' });
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, { day: '2026-05-08', extent: 'forward' }, undefined);
   });
 
   it("'this_and_following' from the first occurrence is the whole series", async () => {
@@ -426,7 +426,7 @@ describe('delete_appointment', () => {
       scope: 'this_and_following',
       occurrenceDay: '2026-05-01',
     });
-    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, undefined);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, undefined, undefined);
   });
 
   it('refuses holidays, subscribed calendars, birthdays and a scope on a one-off', async () => {
@@ -441,6 +441,46 @@ describe('delete_appointment', () => {
       await expect(deleteAppointmentHandler(asClient(m), 'x', 2026, 5, opts)).rejects.toBeInstanceOf(ValidationError);
       expect(m.deleteAppointment).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('notify', () => {
+  const people = [
+    makePerson({ id: 'p_on' }),
+    { ...makePerson({ id: 'p_off' }), notifiableFeatures: ['calendarItemReminder'] },
+    { ...makePerson({ id: 'p_on2' }), notifiableFeatures: ['calendarItemNotification'] },
+  ].map((p, i) => (i === 0 ? { ...p, notifiable: true } : p));
+
+  it('notifies only the attendees who have Cozi notifications on', async () => {
+    const m = makeMockClient();
+    m.getFamilyMembers.mockResolvedValue(people);
+    m.createAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'n' }));
+    await createAppointmentHandler(
+      asClient(m), 'S', '2026-05-15T10:00:00', '2026-05-15T11:00:00', ['p_on', 'p_off', 'p_on2'], false, '', undefined,
+      { notify: true },
+    );
+    expect(m.createAppointment.mock.calls[0]?.[1]).toEqual(['p_on', 'p_on2']);
+  });
+
+  it('refuses when nobody would be notified, before writing', async () => {
+    const m = makeMockClient();
+    m.getFamilyMembers.mockResolvedValue(people);
+    await expect(
+      createAppointmentHandler(asClient(m), 'S', '2026-05-15T10:00:00', '2026-05-15T11:00:00', ['p_off'], false, '', undefined, { notify: true }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(m.createAppointment).not.toHaveBeenCalled();
+  });
+
+  it('a delete with no attendees notifies the reachable family; without notify nobody', async () => {
+    const m = makeMockClient();
+    m.getFamilyMembers.mockResolvedValue(people);
+    m.getCalendar.mockResolvedValue([makeAppointment({ id: 'x', attendees: [] })]);
+    m.deleteAppointment.mockResolvedValue(true);
+    await deleteAppointmentHandler(asClient(m), 'x', 2026, 5, { notify: true });
+    expect(m.deleteAppointment).toHaveBeenLastCalledWith('x', 2026, 5, undefined, ['p_on', 'p_on2']);
+    await deleteAppointmentHandler(asClient(m), 'x', 2026, 5);
+    expect(m.deleteAppointment).toHaveBeenLastCalledWith('x', 2026, 5, undefined, undefined);
+    expect(toApiDeleteFormat('x', undefined, ['p_on'])).toEqual({ itemType: 'appointment', notifyPersons: ['p_on'], delete: { id: 'x' } });
   });
 });
 
