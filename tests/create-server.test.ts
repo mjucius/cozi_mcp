@@ -8,7 +8,7 @@ describe('create_server', () => {
     return Object.keys(tools ?? {});
   };
 
-  it('registers all 13 expected tools', async () => {
+  it('registers all 15 expected tools', async () => {
     const server = createServer({ config: { username: 'test', password: 'test' } });
     // McpServer exposes the underlying server which has list-tools handlers, but
     // the easiest path here is to cross-check against TOOL_NAMES (the source of
@@ -21,11 +21,13 @@ describe('create_server', () => {
       'get_lists',
       'get_list_items',
       'create_list',
+      'rename_list',
       'delete_list',
       'add_item',
       'update_item',
       'remove_items',
       'get_calendar',
+      'search_calendar',
       'today',
       'create_appointment',
       'update_appointment',
@@ -42,9 +44,10 @@ describe('create_server', () => {
     const readOnlyTools = new Set(READ_ONLY_TOOL_NAMES);
     const writeTools = new Set(WRITE_TOOL_NAMES);
 
-    expect(readOnlyTools).toEqual(new Set(['family_members', 'get_lists', 'get_list_items', 'get_calendar', 'today']));
+    expect(readOnlyTools).toEqual(new Set(['family_members', 'get_lists', 'get_list_items', 'get_calendar', 'search_calendar', 'today']));
     expect(writeTools).toEqual(new Set([
       'create_list',
+      'rename_list',
       'delete_list',
       'add_item',
       'update_item',

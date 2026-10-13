@@ -135,6 +135,28 @@ export function expandAppt(a: CoziAppointment): SlimAppointment[] {
   return a.occurrenceDays.map((day) => ({ ...slimAppt({ ...a, startDay: day }), series_start: a.startDay }));
 }
 
+export interface SlimSearchHit extends SlimAppointment {
+  /** Latest occurrence before today, for a recurring series. */
+  last_day?: string;
+  /** Up to the next 10 occurrences from today on, for a recurring series. */
+  next_days?: string[];
+}
+
+/**
+ * A calendar search hit. A recurring series can match hundreds of days across the
+ * search window, so it reports the latest past and next upcoming occurrences, which
+ * is what "when was / when is X" needs.
+ */
+export function slimSearchHit(a: CoziAppointment, today: string): SlimSearchHit {
+  const out: SlimSearchHit = slimAppt(a);
+  if (!isRecurring(a) || a.occurrenceDays.length === 0) return out;
+  const past = a.occurrenceDays.filter((d) => d < today);
+  const next = a.occurrenceDays.filter((d) => d >= today).slice(0, 10);
+  if (past.length) out.last_day = past[past.length - 1]!;
+  if (next.length) out.next_days = next;
+  return out;
+}
+
 export function slimAppt(a: CoziAppointment): SlimAppointment {
   const day = a.startDay;
   const allDay = a.startTime == null;

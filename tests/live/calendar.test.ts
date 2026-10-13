@@ -13,11 +13,12 @@ import {
   createAppointmentHandler,
   deleteAppointmentHandler,
   getCalendarHandler,
+  searchCalendarHandler,
   updateAppointmentHandler,
 } from '../../src/tools/calendar.js';
 import type { SlimAppointment } from '../../src/tools/projections.js';
 import type { RepeatInput } from '../../src/tools/calendar.js';
-import { Live, SANDBOX, haveCreds, stable, subj, type RawCalendarItem } from './harness.js';
+import { Live, SANDBOX, SEARCH_SANDBOX, haveCreds, stable, subj, type RawCalendarItem } from './harness.js';
 
 const { year: Y, jan: JAN, feb: FEB, mar: MAR } = SANDBOX;
 const d = (month: number, day: number) => `${Y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -483,6 +484,37 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       await deleteAppointmentHandler(live.client, r.id, Y, JAN, { scope: 'this_and_following', occurrenceDay: d(JAN, 29) });
       expect(await days(r.id, JAN)).toEqual([d(JAN, 8), d(JAN, 22)]);
       expect(await days(r.id, FEB)).toEqual([]);
+    });
+  });
+
+  // ---- search ------------------------------------------------------------------
+
+  describe('search', () => {
+    it('search_calendar finds our appointments and reports a series by its occurrences', async () => {
+      const { year: SY, month: SM } = SEARCH_SANDBOX;
+      const sd = (day: number) => `${SY}-${String(SM).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const token = 'zqxjwv';
+      const one = await createAppointmentHandler(
+        live.client, subj(`${token} one-off`), `${sd(18)}T10:00:00`, `${sd(18)}T11:00:00`, undefined, false, '', undefined,
+      );
+      live.track(one.id, SY, SM);
+      const rec = await createAppointmentHandler(
+        live.client, subj(`${token} weekly`), `${sd(4)}T07:00:00`, `${sd(4)}T07:30:00`, undefined, false, '', undefined,
+        { repeat: { frequency: 'weekly', until: sd(25) } },
+      );
+      live.track(rec.id, SY, SM);
+
+      // Cozi's search index trails writes by a few seconds.
+      let appointments: Awaited<ReturnType<typeof searchCalendarHandler>>['appointments'] = [];
+      for (let i = 0; i < 15 && appointments.length < 2; i++) {
+        if (i) await new Promise((r) => setTimeout(r, 2000));
+        appointments = (await searchCalendarHandler(live.client, token)).appointments;
+      }
+      expect(appointments.map((a) => a.id).sort()).toEqual([one.id, rec.id].sort());
+      expect(appointments.find((a) => a.id === one.id)).toMatchObject({ day: sd(18), start: `${sd(18)}T10:00` });
+      // Every occurrence is in the past, so only the latest one is reported.
+      const series = appointments.find((a) => a.id === rec.id)!;
+      expect([series.recurring, series.last_day, series.next_days]).toEqual([true, sd(25), undefined]);
     });
   });
 

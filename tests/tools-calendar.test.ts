@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { HttpClient } from '../src/cozi/http.js';
+import { slimSearchHit } from '../src/tools/projections.js';
 import {
+  CoziClient,
   ResourceNotFoundError,
   ValidationError,
   WriteVerificationError,
@@ -869,5 +872,62 @@ describe('appointment payloads: occurrences and reminders', () => {
     const full = toApiCreateFormat(makeAppointment({ recurrence: rec, reminders: [15] })).create as Record<string, unknown>;
     expect(full.recurrence).toEqual(rec);
     expect(full.reminders).toEqual([{ minutesBefore: 15 }]);
+  });
+});
+
+describe('search_calendar', () => {
+  it('unwraps {highlight, item} hits and reads matching days from the days map', async () => {
+    const hit = (id: string, description: string, day: string, extra: Record<string, unknown> = {}) => ({
+      highlight: { description: 'x' },
+      item: { id, description, day, startTime: '10:00:00', endTime: '11:00:00', itemType: 'appointment', itemDetails: { id, ...extra } },
+    });
+    vi.spyOn(HttpClient.prototype, 'request').mockImplementation(async (opts) => {
+      const o = opts as { endpoint: string; params?: Record<string, string> };
+      if (o.endpoint.includes('/auth/login')) return { accessToken: 't', accountId: 'acct_1' } as never;
+      expect(o.endpoint).toBe('/api/ext/2004/acct_1/search/calendar/');
+      expect(o.params).toEqual({ q: 'piano' });
+      return {
+        hasNext: true,
+        items: {
+          one: hit('one', 'Piano recital', '2026-06-01'),
+          rec: hit('rec', 'Piano lesson', '2025-01-06', { recurrence: { rules: [{ frequency: 'Weekly' }] } }),
+        },
+        days: { '2026-06-01': [{ id: 'one' }], '2026-10-05': [{ id: 'rec' }], '2026-10-19': [{ id: 'rec' }], '2026-10-12': [{ id: 'rec' }] },
+      } as never;
+    });
+    const { appointments, more } = await new CoziClient('u', 'p').searchCalendar('piano');
+    expect(more).toBe(true);
+    expect(appointments.map((a) => [a.id, a.subject, a.occurrenceDays])).toEqual([
+      ['one', 'Piano recital', ['2026-06-01']],
+      ['rec', 'Piano lesson', ['2026-10-05', '2026-10-12', '2026-10-19']],
+    ]);
+    vi.restoreAllMocks();
+  });
+
+  it("trims search's '-a' id suffix back to the calendar's uuid, and nothing else", async () => {
+    const uuid = '0f8b2c1e-4a5d-4e6f-9a7b-1c2d3e4f5a6b';
+    vi.spyOn(HttpClient.prototype, 'request').mockImplementation(async (opts) => {
+      if ((opts as { endpoint: string }).endpoint.includes('/auth/login')) return { accessToken: 't', accountId: 'a' } as never;
+      return {
+        items: {
+          [`${uuid}-a`]: { item: { id: `${uuid}-a`, description: 'x', day: '2026-01-01', itemDetails: {} } },
+          'holiday-7-a': { item: { id: 'holiday-7-a', description: 'y', day: '2026-01-02', itemDetails: {} } },
+        },
+        days: { '2026-01-01': [{ id: `${uuid}-a` }] },
+      } as never;
+    });
+    const { appointments } = await new CoziClient('u', 'p').searchCalendar('x');
+    expect(appointments.map((a) => [a.id, a.occurrenceDays])).toEqual([[uuid, ['2026-01-01']], ['holiday-7-a', []]]);
+    vi.restoreAllMocks();
+  });
+
+  it('reports a series by its latest past and next occurrences', () => {
+    const a = makeAppointment({
+      recurrence: { rules: [{ frequency: 'Weekly' }] },
+      occurrenceDays: ['2026-10-05', '2026-10-12', '2026-10-19'],
+    });
+    expect(slimSearchHit(a, '2026-10-13')).toMatchObject({ last_day: '2026-10-12', next_days: ['2026-10-19'] });
+    const once = slimSearchHit(makeAppointment({ occurrenceDays: ['2026-05-15'] }), '2026-10-13');
+    expect('last_day' in once || 'next_days' in once).toBe(false);
   });
 });

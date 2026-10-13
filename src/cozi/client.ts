@@ -238,6 +238,29 @@ export class CoziClient {
     return CoziListSchema.parse(response);
   }
 
+  /**
+   * Rename a list. A PUT with only `title` keeps the list's items and type, and an
+   * unknown id is a 400 rather than an upsert (live-verified 2026-10-13); the Cozi
+   * web client sends the whole list, which is not needed.
+   */
+  async renameList(listId: string, title: string): Promise<CoziList> {
+    const listSeg = idSeg(listId);
+    if (!title.trim()) throw new ValidationError('List title cannot be empty');
+    await this.ensureAuthenticated();
+    const response = await this.http.request({
+      method: 'PUT',
+      endpoint: this.accountEndpoint(`/list/${listSeg}`),
+      body: { title },
+    });
+    const list = CoziListSchema.parse(response);
+    if (list.title !== title) {
+      throw new WriteVerificationError(
+        `Cozi did not apply the rename: asked for "${title}", server returned "${list.title}"`,
+      );
+    }
+    return list;
+  }
+
   async deleteList(listId: string): Promise<boolean> {
     const listSeg = idSeg(listId);
     await this.ensureAuthenticated();
@@ -397,6 +420,36 @@ export class CoziClient {
     }
 
     return appointments;
+  }
+
+  /**
+   * Cozi's calendar search (`/search/calendar/?q=`), the one the web client's search
+   * box uses. Each hit is `{highlight, item}` with a month-page-shaped item, and the
+   * `days` map lists the matching dates across the whole search window, which starts
+   * a few years back (a 2019 item is not found; 2022 is) and pages via `hasNext`.
+   * Returns the first page; `more` says whether Cozi has further pages.
+   */
+  async searchCalendar(query: string): Promise<{ appointments: CoziAppointment[]; more: boolean }> {
+    if (!query.trim()) throw new ValidationError('Search query cannot be empty');
+    await this.ensureAuthenticated();
+    const response = await this.http.request({
+      method: 'GET',
+      endpoint: this.accountEndpoint('/search/calendar/'),
+      params: { q: query },
+    });
+    const appointments: CoziAppointment[] = [];
+    if (!isObj(response)) return { appointments, more: false };
+    const days = occurrenceIndex(response.days);
+    for (const [key, hit] of Object.entries(isObj(response.items) ? response.items : {})) {
+      const item = isObj(hit) && isObj(hit.item) ? hit.item : hit;
+      // Search keys every hit, its inner `id` and its `days` entries as "<uuid>-a"
+      // (live-verified 2026-10-13); the calendar itself uses the bare uuid, which is
+      // what update/delete need. Only a uuid with a one-letter suffix is trimmed.
+      const id = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[a-z]$/.test(key) ? key.slice(0, -2) : key;
+      const parsed = this.parseCalendarItem(id, isObj(item) ? { ...item, id } : item, days.get(key));
+      if (parsed) appointments.push(parsed);
+    }
+    return { appointments, more: response.hasNext === true };
   }
 
   private parseCalendarItem(itemId: string, raw: unknown, occurrenceDays: string[] = []): CoziAppointment | null {

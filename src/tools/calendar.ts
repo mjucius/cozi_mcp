@@ -14,7 +14,7 @@ import {
   type TimeOfDay,
 } from '../cozi/index.js';
 import { parseIsoDateTime, type ParsedDateTime } from './parsers.js';
-import { expandAppt, slimAppt, type SlimAppointment } from './projections.js';
+import { expandAppt, slimAppt, slimSearchHit, type SlimAppointment, type SlimSearchHit } from './projections.js';
 import type { ToolAccessMode } from './index.js';
 import { localNow, toolResult } from './untrusted.js';
 
@@ -25,6 +25,16 @@ export async function getCalendarHandler(
 ): Promise<SlimAppointment[]> {
   const appts = await client.getCalendar(year, month);
   return appts.flatMap(expandAppt);
+}
+
+export async function searchCalendarHandler(
+  client: CoziClient,
+  query: string,
+): Promise<{ appointments: SlimSearchHit[]; more?: true }> {
+  const { appointments, more } = await client.searchCalendar(query);
+  const today = localNow().date;
+  const hits = appointments.map((a) => slimSearchHit(a, today)).sort((x, y) => x.day.localeCompare(y.day));
+  return more ? { appointments: hits, more: true } : { appointments: hits };
 }
 
 const minutesOfDay = (t: TimeOfDay): number => t.h * 60 + t.m;
@@ -394,6 +404,23 @@ export function registerCalendarTools(
       const result = await getCalendarHandler(await getClient(), year, month);
       return toolResult(result);
     },
+  );
+
+  server.registerTool(
+    'search_calendar',
+    {
+      title: 'Search the calendar',
+      description:
+        'Find appointments by words in their subject, across months (Cozi\'s own search, the one in ' +
+        'its app). Use it for "when is the dentist?" instead of paging through months. ' +
+        'Returns: {appointments: [{...same fields as get_calendar, last_day?, next_days?}], more?}. ' +
+        'A recurring series is one entry with `last_day` (latest past occurrence) and `next_days` ' +
+        '(up to 10 upcoming). Cozi searches from a few years back onward, and an appointment created ' +
+        'in the last few seconds may not be found yet; `more: true` means it found more than this ' +
+        'first page, so narrow the query.',
+      inputSchema: { query: z.string() },
+    },
+    async ({ query }) => toolResult(await searchCalendarHandler(await getClient(), query)),
   );
 
   server.registerTool(

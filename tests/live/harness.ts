@@ -53,6 +53,16 @@ export const SANDBOX = {
   mar: 3,
 } as const;
 
+// Calendar search does not reach back to 2019 (live-verified 2026-10-13: a 2022 item
+// is found, a 2019 one is not), so search fixtures live here. Still in the past.
+export const SEARCH_SANDBOX = { year: 2022, month: 1 } as const;
+const SANDBOX_PAGES: Array<[number, number]> = [
+  [SANDBOX.year, SANDBOX.jan],
+  [SANDBOX.year, SANDBOX.feb],
+  [SANDBOX.year, SANDBOX.mar],
+  [SEARCH_SANDBOX.year, SEARCH_SANDBOX.month],
+];
+
 export const MARK = 'LIVE_TEST_DELETE_ME';
 export const subj = (label: string): string => `${MARK} ${label}`;
 
@@ -137,10 +147,10 @@ export class Live {
   /** Delete anything carrying our marker in the sandbox — leftovers from an aborted run. */
   async sweep(): Promise<number> {
     let n = 0;
-    for (const m of [SANDBOX.jan, SANDBOX.feb, SANDBOX.mar]) {
-      for (const [id, it] of await this.rawPage(SANDBOX.year, m)) {
+    for (const [y, m] of SANDBOX_PAGES) {
+      for (const [id, it] of await this.rawPage(y, m)) {
         if (typeof it.description === 'string' && it.description.startsWith(MARK)) {
-          await this.client.deleteAppointment(it.id ?? id, SANDBOX.year, m);
+          await this.client.deleteAppointment(it.id ?? id, y, m);
           n++;
         }
       }
