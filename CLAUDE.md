@@ -11,8 +11,8 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 ## Development Commands
 
 - `npm install` — install dependencies
-- `npm test` — vitest (156 tests, mocks `CoziClient` at the boundary; no creds needed)
-- `npm run test:live` — live conformance suite against the real Cozi API (`tests/live/`; reads `creds.env` or `COZI_USERNAME`/`COZI_PASSWORD`, skips without them). ~25 tests, ~40 s, self-cleaning. **Required before every release** — see Testing.
+- `npm test` — vitest (200 tests, mocks `CoziClient` at the boundary; no creds needed)
+- `npm run test:live` — live conformance suite against the real Cozi API (`tests/live/`; reads `creds.env` or `COZI_USERNAME`/`COZI_PASSWORD`, skips without them). ~38 tests, ~60 s, self-cleaning. **Required before every release** — see Testing.
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — tsup → `dist/server.js` + `dist/bin.js`
 - `npm run dev` — local stdio dev (needs `COZI_USERNAME` + `COZI_PASSWORD` env vars)
@@ -27,25 +27,30 @@ Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 - `src/bin.ts` — npx + MCPB stdio entry point (`#!/usr/bin/env node`). Reads `COZI_USERNAME`/`COZI_PASSWORD` env vars, instantiates `createServer`, pipes to `StdioServerTransport`.
 - `src/instructions.ts` — `SERVER_INSTRUCTIONS` constant injected into the MCP server.
 - `src/cozi/` — Inlined Cozi HTTP client. **No separate npm package.** Cozi API access lives here.
-  - `client.ts` — `CoziClient` class with 13 methods (auth + list/item/calendar CRUD).
+  - `client.ts` — `CoziClient` class (auth with cookie refresh + list/item/calendar CRUD, calendar search). Every request carries the apikey.
   - `http.ts` — fetch wrapper with per-client cookie jar, 100ms rate-limit gate, 3-attempt retry/backoff, 401-once-then-reauth.
   - `models.ts` — Zod schemas with `.transform()` for camelCase↔snake_case wire mapping.
   - `appointment-payloads.ts` — `toApiCreate/Edit/DeleteFormat()` builders for the three Cozi appointment payload shapes.
   - `errors.ts` — `CoziError` hierarchy.
-- `src/tools/` — 13 MCP tools. Each tool has a `*Handler` function (directly testable) and a `register*Tool(server, getClient)` registrar.
+- `src/tools/` — 15 MCP tools. Each tool has a `*Handler` function (directly testable) and a `register*Tool(server, getClient)` registrar.
   - `projections.ts` — `slimPerson` / `slimListSummary` / `slimItem` / `slimAppt`. **Wire keys are exact strings** (`type`, `item_count`, `all_day` — not `listType`, `itemCount`, `allDay`).
   - `parsers.ts` — `parseIsoDateTime`, `parseListType`.
   - `untrusted.ts` — `toolResult` returns two text blocks: `content[0]` is the boundary-fenced Cozi data, `content[1]` a local-time stamp from `localNow()` (host clock; `TZ` overrides) so assistants with a UTC clock resolve "tomorrow" correctly.
 
 ### Cozi auth quirks (real bugs if you forget)
 
-- Login URL MUST include `?apikey=coziwc|v251_production` query param. Cozi started enforcing this in early 2026 — without it you get 401 with the misleading "browser does not understand how to supply credentials" message regardless of credential validity.
+- Login URL MUST include `?apikey=coziwc|v251_production` query param. Cozi started enforcing this in early 2026 — without it you get 401 with the misleading "browser does not understand how to supply credentials" message regardless of credential validity. Since the 2026-10 audit every request carries it (`HttpClient` `defaultParams`), as Cozi's own web client does.
+- Login with `issueRefresh: true` sets a `cozi_refresh` cookie; an empty `POST /2111/{acct}/auth/reauth` with that cookie returns a fresh token (same shape as login). `CoziClient.refresh()` uses it before expiry and on a 401, falling back to the password.
 - All requests need browser-shaped headers: `Origin: https://my.cozi.com`, `Referer: https://my.cozi.com/`, a real Chrome `User-Agent`. Cloudflare in front of `rest.cozi.com` 401s anything that looks like a Node/Python default UA.
 - Auth response: `{accessToken, accountId, expiresIn}`. Send `Authorization: Bearer <accessToken>` on subsequent requests. On 401 mid-session, re-authenticate once and replay.
 - Calendar GET returns `{items: {<itemId>: {...}}}` (a map, not an array). Iterate `Object.entries`.
 - Appointment `notes` and `location` live in `itemDetails.notes` / `itemDetails.location` on the GET response — not at the top level. `parseCalendarItem` hoists them.
 - `createAppointment` doesn't return an ID. Client matches by `day + description` in the response to find the new appointment.
 - Multi-day events are expressed by top-level `dateSpan`, a **day offset**: the end instant is `day + dateSpan` days later at `endTime`, for timed and all-day events alike. A same-day timed event is `0` (usually the field is simply absent); a timed overnight is `1`. An all-day event is stored `00:00:00`/`00:00:00`, so its end instant is the midnight *after* its last covered day (iCal exclusive `DTEND`) — hence a one-day all-day event is `1` and Jul 30 → Aug 2 all-day is `4`. The ±1 between "last covered day" and "end instant" lives only in `lastDayOf` / `dateSpanForLastDay` in `models.ts`. **Never clamp or "normalise" `dateSpan` on the write path** — a `>= 1` clamp is exactly what made every timed appointment a day too long in 2.2.0/2.2.1 (#12). A spanning event is returned by the GET for *every* month it overlaps, always keyed with `day` = its start day; that month-page listing is the **only server-side view of how Cozi reads a span**, and `tests/live/calendar.test.ts` uses it as the oracle. Do not confuse `dateSpan` with `endDay`, which is the recurring-series end nested in `recurrence`.
+- A month page also carries `days: {"YYYY-MM-DD": [{id}]}`, Cozi's own expansion of every item onto the days it falls on: recurring series expanded, deleted occurrences left out, multi-day items listed on every covered day, exactly the requested month. `get_calendar` lists occurrences from it; never expand rules ourselves.
+- Occurrence-level writes put `selectedDay` + `extent` beside the operation (the web client's shape). `extent: 'day'` excludes one occurrence (`exdates` entry); on an edit Cozi stores the changed copy as a new appointment and links it as `standinApptId` in that exdate. `extent: 'forward'` ends the series the day before; on an edit a new series starts there. Neither ever returns the new id, so `CoziClient.storedOccurrenceEdit` re-reads to find it.
+- Calendar search (`/search/calendar/?q=`) wraps hits as `{highlight, item}` and keys them `<uuid>-a`; strip the suffix before using the id. It does not reach back to 2019, and trails writes by a few seconds.
+- A list `PUT /list/{id}` with only `{title}` renames it and keeps its items; an unknown id is a 400 (unlike item PUT, which upserts).
 - All-day appointments must be written as `startTime`/`endTime` of `"00:00"`, never `null` — Cozi rejects a null with *"start_time and end_time are required"*. The read path coerces the stored `00:00:00` pair back to `null`.
 
 ## Credentials and security model
@@ -73,14 +78,15 @@ Two credential entry points, same downstream `getClient(username, password)` cac
 - `tests/helpers/factories.ts` — `makePerson` / `makeItem` / `makeList` / `makeAppointment` (mirrors prior `conftest.py` factories).
 - `tests/helpers/mock-client.ts` — `makeMockClient()` returns a stand-in with `vi.fn()` for each method.
 
-156 tests total, ~1s wall time. (The per-file counts above predate several additions — `npm test` is the source of truth.) No network access required.
+200 tests total, ~2s wall time. (The per-file counts above predate several additions — `npm test` is the source of truth.) No network access required.
 
 ### Live conformance suite (`tests/live/`, `npm run test:live`)
 
 The unit suite can only check what we *send*: it mocks `CoziClient` and asserts against our own model of Cozi. Issue #12 shipped with 20 green unit tests and a 15/15 smoke script because both encoded the same wrong belief about `dateSpan`. The live suite is the guard against that class of bug:
 
-- `tests/live/harness.ts` — credential loading, a fixed **past** sandbox window (`2019-01..03`), raw wire GET/POST, `monthsListing(id)` (the span oracle), sweep + teardown of every `LIVE_TEST_DELETE_ME` subject. It reads whole month pages (Cozi has no other calendar GET) but only ever asserts on and deletes its own subjects, and writes nothing to disk.
+- `tests/live/harness.ts` — credential loading, a fixed **past** sandbox window (`2019-01..03`, plus `2022-01` for search, which does not reach back to 2019), raw wire GET/POST, `monthsListing(id)` (the span oracle), sweep + teardown of every `LIVE_TEST_DELETE_ME` subject. It reads whole month pages (Cozi has no other calendar GET) but only ever asserts on and deletes its own subjects, and writes nothing to disk.
 - `tests/live/calendar.test.ts` — create / update / delete across timed same-day, overnight, multi-day, trip-shaped, all-day single, all-day cross-month, attendees/location/notes, timed↔all-day switches, a bounded recurring series, and validation. Every write is checked three ways: exact raw read-back, the set of month pages Cozi lists it on, and tool result `toEqual` a fresh `get_calendar` projection.
+- `tests/live/auth.test.ts` — the cookie token refresh works without the password (the password fallback would otherwise hide a broken refresh).
 - `tests/live/lists.test.ts` — list/item create, rename, mark, remove, delete, the 201-upsert guard, each verified by a fresh `GET /list/`.
 
 Rules for this suite: assertions are exact (no `<=`), every claim about wire semantics must come from a write-then-observe case here (never from a read-only survey), and any change to how an appointment field is *written* also gets one manual look at the canonical shapes in the Cozi app before release.

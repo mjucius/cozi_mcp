@@ -7,9 +7,11 @@ export const SERVER_INSTRUCTIONS =
   'updating or deleting an appointment from that page. get_calendar lists a ' +
   'recurring series once per occurrence, on the days Cozi itself expands it to ' +
   '(deleted occurrences already left out); every occurrence carries the series id. ' +
-  'For edits and deletes the series is one unit: ' +
-  'update_appointment changes every occurrence, and delete_appointment refuses ' +
-  'unless delete_series=true — confirm with the user before deleting a series. ' +
+  'To change or delete a series pass `scope`: \'this\' with occurrence_day set to ' +
+  "that occurrence's `day`, 'this_and_following', or 'series' for every occurrence; " +
+  "match the user's words, and confirm with the user before deleting a whole series. " +
+  'To find an appointment by name across months use search_calendar. Only pass ' +
+  'notify=true when the user asks for family members to be notified. ' +
   'Dates: every tool result ends with the current local time on the user\'s ' +
   'machine. Use it, not your own clock (which may be UTC), to resolve ' +
   '"today", "tomorrow", "this Saturday" and other relative dates; before your ' +
