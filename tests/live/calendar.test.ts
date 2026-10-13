@@ -314,6 +314,31 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
     });
 
+    it('get_calendar lists a series once per occurrence, on exactly the days Cozi expands it to', async () => {
+      const s = subj('occurrences');
+      await live.rawPost(Y, JAN, [{
+        itemType: 'appointment',
+        create: {
+          startDay: d(JAN, 8),
+          recurrence: { rules: [{ frequency: 'Weekly', interval: 1, byDay: ['TU'], end: { untilDay: d(FEB, 12) } }] },
+          details: { startTime: '07:00', endTime: '07:30', dateSpan: 0, subject: s, notes: '', location: '' },
+        },
+      }]);
+      const raw = await live.findRaw(Y, JAN, s);
+      live.track(raw!.id!, Y, JAN);
+      // Delete one occurrence the way the Cozi app does, so it must drop out of the listing.
+      await live.rawPost(Y, JAN, [{ itemType: 'appointment', delete: { id: raw!.id }, selectedDay: d(JAN, 22), extent: 'day' }]);
+
+      const listed = async (m: number) =>
+        (await getCalendarHandler(live.client, Y, m)).filter((a) => a.id === raw!.id);
+      const jan = await listed(JAN);
+      expect(jan.map((a) => a.day)).toEqual([d(JAN, 8), d(JAN, 15), d(JAN, 29)]);
+      expect(jan.map((a) => a.start)).toEqual([`${d(JAN, 8)}T07:00`, `${d(JAN, 15)}T07:00`, `${d(JAN, 29)}T07:00`]);
+      expect(jan.every((a) => a.series_start === d(JAN, 8) && a.recurring && a.series_end === d(FEB, 12))).toBe(true);
+      expect(jan[0]!.skipped_days).toEqual([d(JAN, 22)]);
+      expect((await listed(FEB)).map((a) => a.day)).toEqual([d(FEB, 5), d(FEB, 12)]);
+    });
+
     it('an edit keeps reminders set in the Cozi app, though it never sends them', async () => {
       const s = subj('reminders');
       // Reminders are top-level on the wire and the web client re-sends them on every

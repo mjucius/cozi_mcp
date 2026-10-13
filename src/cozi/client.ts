@@ -92,6 +92,25 @@ const parseTimeFromCalendar = (raw: unknown): TimeOfDay | null => {
   return { h, m };
 };
 
+/**
+ * Every day each item falls on, from a month page's `days` map
+ * (`{"2019-01-15": [{id}], …}`). Cozi expands recurring series server-side, leaves
+ * out deleted occurrences, and lists every day a multi-day item covers; the map
+ * spans exactly the requested month (live-verified 2026-10-13).
+ */
+function occurrenceIndex(days: unknown): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  if (!isObj(days)) return index;
+  for (const [day, refs] of Object.entries(days).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Array.isArray(refs)) continue;
+    for (const ref of refs) {
+      const id = isObj(ref) && typeof ref.id === 'string' ? ref.id : undefined;
+      if (id) index.set(id, [...(index.get(id) ?? []), day]);
+    }
+  }
+  return index;
+}
+
 export class CoziClient {
   private accessToken: string | null = null;
   private accountId: string | null = null;
@@ -360,8 +379,9 @@ export class CoziClient {
     const appointments: CoziAppointment[] = [];
 
     if (isObj(response) && isObj(response.items)) {
+      const days = occurrenceIndex(response.days);
       for (const [itemId, itemData] of Object.entries(response.items)) {
-        const parsed = this.parseCalendarItem(itemId, itemData);
+        const parsed = this.parseCalendarItem(itemId, itemData, days.get(itemId));
         if (parsed) appointments.push(parsed);
       }
     } else if (Array.isArray(response)) {
@@ -377,7 +397,7 @@ export class CoziClient {
     return appointments;
   }
 
-  private parseCalendarItem(itemId: string, raw: unknown): CoziAppointment | null {
+  private parseCalendarItem(itemId: string, raw: unknown, occurrenceDays: string[] = []): CoziAppointment | null {
     if (!isObj(raw)) return null;
 
     const description = (raw.description as string | undefined)?.trim();
@@ -427,6 +447,10 @@ export class CoziClient {
         endDay,
         itemVersion,
         readOnly,
+        itemType: typeof raw.itemType === 'string' ? raw.itemType : null,
+        itemSource: typeof raw.itemSource === 'string' ? raw.itemSource : null,
+        reminders: raw.reminders,
+        occurrenceDays,
       });
     } catch {
       return null;

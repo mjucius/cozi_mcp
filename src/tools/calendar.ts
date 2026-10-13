@@ -12,7 +12,7 @@ import {
   type TimeOfDay,
 } from '../cozi/index.js';
 import { parseIsoDateTime, type ParsedDateTime } from './parsers.js';
-import { slimAppt, type SlimAppointment } from './projections.js';
+import { expandAppt, slimAppt, type SlimAppointment } from './projections.js';
 import type { ToolAccessMode } from './index.js';
 import { localNow, toolResult } from './untrusted.js';
 
@@ -22,7 +22,7 @@ export async function getCalendarHandler(
   month: number,
 ): Promise<SlimAppointment[]> {
   const appts = await client.getCalendar(year, month);
-  return appts.map(slimAppt);
+  return appts.flatMap(expandAppt);
 }
 
 const minutesOfDay = (t: TimeOfDay): number => t.h * 60 + t.m;
@@ -219,14 +219,17 @@ export function registerCalendarTools(
       description:
         'Appointments for one month. ' +
         'Returns: [{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?, ' +
-        'recurring?, recurrence?, series_end?, skipped_days?}]. ' +
-        '`day` is always the start day and `end_day` appears only on multi-day events; such an ' +
-        'event is listed in every month it overlaps, so `day` may fall outside the month asked for. ' +
-        'A recurring series is ONE entry carrying `recurring: true` (plus `recurrence`, its rule ' +
-        'in words, and `series_end` when bounded); it stands for every occurrence and individual ' +
-        'occurrences are not listed. Work out the actual days from `recurrence`, then drop any in ' +
-        '`skipped_days`: those single occurrences were deleted in Cozi and are NOT happening. ' +
-        'Updating or deleting its `id` affects the whole series.',
+        'reminders?, kind?, read_only?, source?, recurring?, recurrence?, series_start?, series_end?, ' +
+        'skipped_days?, covered_days?}]. ' +
+        '`day` is the day the entry happens; `end_day` appears only on multi-day events, which are ' +
+        'listed in every month they overlap, so `day` may fall outside the month asked for. ' +
+        'A recurring series (`recurring: true`) is listed once per occurrence in the month, as Cozi ' +
+        'itself expands it: each entry carries the series `id`, its own `day`, and `series_start`. ' +
+        'Occurrences deleted in Cozi are already left out (and named in `skipped_days`). A multi-day ' +
+        'recurring series is instead ONE entry whose `covered_days` lists every day it covers this ' +
+        'month. `kind` marks items that are not plain appointments (e.g. "birthday"); `read_only` ' +
+        'items (holidays, subscribed calendars, with `source` naming the calendar) cannot be changed. ' +
+        '`reminders` are minutes before the start.',
       inputSchema: { year: z.number().int(), month: z.number().int().min(1).max(12) },
     },
     async ({ year, month }) => {

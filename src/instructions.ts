@@ -4,10 +4,10 @@ export const SERVER_INSTRUCTIONS =
   'updating appointments with specific attendees, call family_members() ' +
   'first and use those `id` values in the `attendees` arg. Calendar tools ' +
   'are scoped to a (year, month) page; pass the same year/month back when ' +
-  'updating or deleting an appointment from that page. A `get_calendar` entry with ' +
-  '`recurring: true` is a whole recurring series, not one occurrence; derive its days ' +
-  'from `recurrence` and leave out every date in `skipped_days`, which were deleted ' +
-  'one by one in Cozi. For edits and deletes it is one unit: ' +
+  'updating or deleting an appointment from that page. get_calendar lists a ' +
+  'recurring series once per occurrence, on the days Cozi itself expands it to ' +
+  '(deleted occurrences already left out); every occurrence carries the series id. ' +
+  'For edits and deletes the series is one unit: ' +
   'update_appointment changes every occurrence, and delete_appointment refuses ' +
   'unless delete_series=true — confirm with the user before deleting a series. ' +
   'Dates: every tool result ends with the current local time on the user\'s ' +
