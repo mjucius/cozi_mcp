@@ -35,6 +35,9 @@ export function toApiEditFormat(a: CoziAppointment): Record<string, unknown> {
   // Cozi's calendar edit is a FULL REPLACE: any field omitted from the payload is
   // erased server-side. Re-send the recurrence rule the read path preserved so an
   // unrelated edit (e.g. notes) does not strip a recurring appointment's schedule.
+  // Top-level `reminders` ([{minutesBefore}]) are the exception: the web client
+  // re-sends them, but Cozi keeps them when omitted (live-verified 2026-10-13), so
+  // they are not read or sent here.
   //
   // Wire shape captured from the real Cozi web client on 2026-07-24 (DevTools):
   //   {"itemType":"appointment","edit":{

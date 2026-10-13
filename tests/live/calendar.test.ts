@@ -314,6 +314,30 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
     });
 
+    it('an edit keeps reminders set in the Cozi app, though it never sends them', async () => {
+      const s = subj('reminders');
+      // Reminders are top-level on the wire and the web client re-sends them on every
+      // edit. Our edit omits them and relies on Cozi keeping what it is not sent.
+      const reminders = [{ minutesBefore: 60 }];
+      await live.rawPost(Y, JAN, [{
+        itemType: 'appointment',
+        create: {
+          startDay: d(JAN, 15),
+          reminders,
+          details: { startTime: '10:00', endTime: '11:00', dateSpan: 0, subject: s, notes: 'orig', location: '' },
+        },
+      }]);
+      const raw = await live.findRaw(Y, JAN, s);
+      expect(raw?.id).toBeTruthy();
+      live.track(raw!.id!, Y, JAN);
+      expect(raw!.reminders).toEqual(reminders);
+
+      await updateAppointmentHandler(live.client, raw!.id!, Y, JAN, { notes: 'edited' });
+      const after = await live.findRaw(Y, JAN, s);
+      expect(after?.itemDetails?.notes).toBe('edited');
+      expect(after?.reminders).toEqual(reminders);
+    });
+
     it('an end before the start is rejected without touching the appointment', async () => {
       const r = await create('update rejected', `${d(JAN, 20)}T10:00:00`, `${d(JAN, 22)}T10:00:00`);
       const before = await live.findRaw(Y, JAN, r.subject);
