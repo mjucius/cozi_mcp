@@ -4,7 +4,10 @@ import {
   CoziList,
   CoziPerson,
   formatTimeOfDay,
+  isRecurring,
   lastDayOf,
+  recurrenceText,
+  skippedDays,
 } from '../cozi/index.js';
 
 export interface SlimPerson {
@@ -40,6 +43,21 @@ export interface SlimAppointment {
   attendees?: string[];
   location?: string;
   notes?: string;
+  /**
+   * Present (and `true`) only on a recurring series. Cozi returns a series as ONE
+   * entry standing for every occurrence, so an update or delete of this `id`
+   * affects all of them — which is why the flag is surfaced at all.
+   */
+  recurring?: true;
+  /** Cozi's own wording of the rule, e.g. "Every week on Friday until Feb 15, 2019". */
+  recurrence?: string;
+  /** Last day of a bounded series. Omitted when the series is open-ended. */
+  series_end?: string;
+  /**
+   * Days on which a single occurrence of the series was deleted in Cozi. The rule
+   * still names them, but nothing happens on them. Omitted when there are none.
+   */
+  skipped_days?: string[];
 }
 
 export function slimPerson(p: CoziPerson): SlimPerson {
@@ -89,5 +107,15 @@ export function slimAppt(a: CoziAppointment): SlimAppointment {
   if (a.attendees && a.attendees.length) out.attendees = [...a.attendees];
   if (a.location) out.location = a.location;
   if (a.notes) out.notes = a.notes;
+  // A series is otherwise indistinguishable from a one-off in this projection, and
+  // deleting one by id removes every occurrence (see deleteAppointmentHandler).
+  if (isRecurring(a)) {
+    out.recurring = true;
+    const text = recurrenceText(a);
+    if (text) out.recurrence = text;
+    if (a.endDay) out.series_end = a.endDay;
+    const skipped = skippedDays(a);
+    if (skipped.length) out.skipped_days = skipped;
+  }
   return out;
 }

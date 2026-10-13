@@ -21,8 +21,11 @@ export {
   ListTypeSchema,
   dateSpanForLastDay,
   formatTimeOfDay,
+  isRecurring,
   makeAppointment,
   lastDayOf,
+  recurrenceText,
+  skippedDays,
 } from './models.js';
 export type {
   CalendarDate,

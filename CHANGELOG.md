@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Occurrences deleted one at a time no longer look planned.** Deleting a single
+  occurrence in the Cozi app keeps the series and records the day as an exception,
+  which `get_calendar` dropped — so an assistant reading "Every Monday" still
+  listed the Monday you had removed. A series now carries `skipped_days`, the dates
+  of those deleted occurrences, and the tool and server instructions say to leave
+  them out.
+- **Deleting a recurring series is no longer silent.** Cozi returns a recurring
+  series as a single calendar item, and `delete_appointment` sent its id straight
+  through — removing every occurrence, past and future, with nothing in the tool
+  surface to show that the appointment was a series at all. `get_calendar` now
+  marks one with `recurring: true` (plus `recurrence`, Cozi's wording of the rule,
+  and `series_end` when bounded), and `delete_appointment` refuses a series unless
+  the new `delete_series=true` argument is passed. The server instructions tell the
+  assistant to confirm with the user first.
+- **`delete_appointment` reports an id that is not on the page.** Cozi treats an
+  unknown id as a silent success; the tool now looks the id up on the `(year, month)`
+  page first and raises not-found, the same way `update_appointment` does.
+
+### Changed
+
+- `update_appointment` documents that an edit to a series applies to every
+  occurrence (the rule itself was already preserved since 2.1.0).
+
 ## [2.3.0] - 2026-10-12
 
 ### Added

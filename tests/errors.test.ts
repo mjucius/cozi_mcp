@@ -17,6 +17,7 @@ import {
 import { familyMembersHandler } from '../src/tools/family.js';
 import { addItemHandler, removeItemsHandler } from '../src/tools/items.js';
 import { deleteListHandler, getListsHandler } from '../src/tools/lists.js';
+import { makeAppointment } from './helpers/factories.js';
 import { asClient, makeMockClient } from './helpers/mock-client.js';
 
 describe('error propagation', () => {
@@ -89,10 +90,20 @@ describe('error propagation', () => {
 
   it('delete_appointment propagates NetworkError', async () => {
     const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ id: 'appt' })]);
     m.deleteAppointment.mockRejectedValue(new NetworkError('flaky'));
     await expect(deleteAppointmentHandler(asClient(m), 'appt', 2026, 5)).rejects.toBeInstanceOf(
       NetworkError,
     );
+  });
+
+  it('delete_appointment propagates NetworkError from the page lookup', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockRejectedValue(new NetworkError('flaky'));
+    await expect(deleteAppointmentHandler(asClient(m), 'appt', 2026, 5)).rejects.toBeInstanceOf(
+      NetworkError,
+    );
+    expect(m.deleteAppointment).not.toHaveBeenCalled();
   });
 
   it('subclass caught as CoziError', async () => {

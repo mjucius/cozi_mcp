@@ -316,12 +316,61 @@ describe('create_appointment', () => {
 });
 
 describe('delete_appointment', () => {
-  it('passes year/month through', async () => {
+  const series = (): CoziAppointment => {
+    const a = makeAppointment({ id: 'series_1', subject: 'Weekly standup' });
+    a.recurrence = { text: ['Every week on Friday'], endDay: '2026-12-31' };
+    a.endDay = '2026-12-31';
+    return a;
+  };
+
+  it('looks the id up on the page, then passes year/month through', async () => {
     const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ id: 'appt_x' })]);
     m.deleteAppointment.mockResolvedValue(true);
     const result = await deleteAppointmentHandler(asClient(m), 'appt_x', 2026, 5);
     expect(result).toBe(true);
+    expect(m.getCalendar).toHaveBeenCalledWith(2026, 5);
     expect(m.deleteAppointment).toHaveBeenCalledOnce();
+    expect(m.deleteAppointment).toHaveBeenCalledWith('appt_x', 2026, 5);
+  });
+
+  // Cozi itself treats an unknown id as a silent success; the page lookup is what
+  // turns that into a real answer for the caller.
+  it('an id that is not on the page is a ResourceNotFoundError and nothing is sent', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ id: 'appt_x' })]);
+    await expect(deleteAppointmentHandler(asClient(m), 'missing', 2026, 5)).rejects.toBeInstanceOf(
+      ResourceNotFoundError,
+    );
+    expect(m.deleteAppointment).not.toHaveBeenCalled();
+  });
+
+  it('a recurring series is refused by default and nothing is sent', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    const err = await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ValidationError);
+    expect((err as Error).message).toContain('recurring series');
+    expect((err as Error).message).toContain('delete_series=true');
+    // Household-written content must not leak into an unfenced error message.
+    expect((err as Error).message).not.toContain('Weekly standup');
+    expect((err as Error).message).not.toContain('Every week');
+    expect(m.deleteAppointment).not.toHaveBeenCalled();
+  });
+
+  it('a recurring series is deleted when delete_series=true', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([series()]);
+    m.deleteAppointment.mockResolvedValue(true);
+    expect(await deleteAppointmentHandler(asClient(m), 'series_1', 2026, 5, true)).toBe(true);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5);
+  });
+
+  it('delete_series=true on a one-off is harmless', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([makeAppointment({ id: 'appt_x' })]);
+    m.deleteAppointment.mockResolvedValue(true);
+    expect(await deleteAppointmentHandler(asClient(m), 'appt_x', 2026, 5, true)).toBe(true);
     expect(m.deleteAppointment).toHaveBeenCalledWith('appt_x', 2026, 5);
   });
 });

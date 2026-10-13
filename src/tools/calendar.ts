@@ -5,6 +5,7 @@ import {
   ResourceNotFoundError,
   ValidationError,
   dateSpanForLastDay,
+  isRecurring,
   makeAppointment,
   type CalendarDate,
   type CoziAppointment,
@@ -180,7 +181,29 @@ export async function deleteAppointmentHandler(
   appointmentId: string,
   year: number,
   month: number,
+  deleteSeries = false,
 ): Promise<boolean> {
+  // Cozi's delete takes only an id and treats an unknown one as a silent success, so
+  // the (year, month) page is read first. That tells the caller when the id is not
+  // there — and, the reason this lookup exists, whether the id names a recurring
+  // series. Cozi returns a series as ONE item, never as its occurrences, and deleting
+  // that id removes every occurrence, past and future, without any warning. The
+  // model only ever sees the slim projection, so until `recurring` was surfaced there
+  // it had no way to know it was about to do that. Refuse unless the caller says so.
+  const page = await client.getCalendar(year, month);
+  const existing = page.find((a) => a.id === appointmentId);
+  if (!existing) {
+    const monthStr = String(month).padStart(2, '0');
+    throw new ResourceNotFoundError(`Appointment '${appointmentId}' not found in ${year}-${monthStr}`);
+  }
+  if (isRecurring(existing) && !deleteSeries) {
+    // Deliberately no subject or rule text here: those are household-written content
+    // and an error message is not fenced the way a tool result is (see untrusted.ts).
+    throw new ValidationError(
+      `Appointment '${appointmentId}' is a recurring series; deleting it removes every ` +
+        'occurrence. Pass delete_series=true to delete the whole series.',
+    );
+  }
   return client.deleteAppointment(appointmentId, year, month);
 }
 
@@ -195,9 +218,15 @@ export function registerCalendarTools(
       title: 'Get appointments for a month',
       description:
         'Appointments for one month. ' +
-        'Returns: [{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?}]. ' +
+        'Returns: [{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?, ' +
+        'recurring?, recurrence?, series_end?, skipped_days?}]. ' +
         '`day` is always the start day and `end_day` appears only on multi-day events; such an ' +
-        'event is listed in every month it overlaps, so `day` may fall outside the month asked for.',
+        'event is listed in every month it overlaps, so `day` may fall outside the month asked for. ' +
+        'A recurring series is ONE entry carrying `recurring: true` (plus `recurrence`, its rule ' +
+        'in words, and `series_end` when bounded); it stands for every occurrence and individual ' +
+        'occurrences are not listed. Work out the actual days from `recurrence`, then drop any in ' +
+        '`skipped_days`: those single occurrences were deleted in Cozi and are NOT happening. ' +
+        'Updating or deleting its `id` affects the whole series.',
       inputSchema: { year: z.number().int(), month: z.number().int().min(1).max(12) },
     },
     async ({ year, month }) => {
@@ -273,7 +302,8 @@ export function registerCalendarTools(
         'multi-day and one on the start day collapses it back; passing `start` alone moves the ' +
         'event and keeps its length, and all_day=true preserves the span. A bare date ' +
         "(e.g. '2026-06-15') is accepted for `start`/`end` when the event is, or is being " +
-        'made, all-day; on a timed event it is an error.',
+        'made, all-day; on a timed event it is an error. On a recurring series (`recurring: true` ' +
+        'in get_calendar) the change applies to every occurrence; the recurrence rule is kept.',
       inputSchema: {
         appointment_id: z.string(),
         year: z.number().int(),
@@ -305,15 +335,26 @@ export function registerCalendarTools(
     'delete_appointment',
     {
       title: 'Delete an appointment',
-      description: 'Delete an appointment. Returns true on success.',
+      description:
+        'Delete an appointment. Returns true on success; errors if the id is not on the ' +
+        '(year, month) page. A recurring series (`recurring: true` in get_calendar) is one ' +
+        'appointment standing for every occurrence, so deleting it removes all of them — the ' +
+        'call is refused unless `delete_series=true` is passed. Confirm with the user first.',
       inputSchema: {
         appointment_id: z.string(),
         year: z.number().int(),
         month: z.number().int().min(1).max(12),
+        delete_series: z.boolean().optional(),
       },
     },
-    async ({ appointment_id, year, month }) => {
-      const result = await deleteAppointmentHandler(await getClient(), appointment_id, year, month);
+    async ({ appointment_id, year, month, delete_series }) => {
+      const result = await deleteAppointmentHandler(
+        await getClient(),
+        appointment_id,
+        year,
+        month,
+        delete_series ?? false,
+      );
       return toolResult(result);
     },
   );
