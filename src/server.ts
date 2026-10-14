@@ -41,6 +41,10 @@ const LOCKOUT_THRESHOLD = 5;
 const LOCKOUT_BASE_MS = 1_000;
 const LOCKOUT_CAP_MS = 15 * 60 * 1_000;
 const authFailures = new Map<string, { fails: number; lockedUntil: number }>();
+// One password login at a time per credentials: tool calls made in parallel on an
+// empty or stale cache would otherwise each log in, and each failure would count
+// towards the lockout below.
+const logins = new Map<string, Promise<CoziClient>>();
 
 export async function getClient(username: string, password: string): Promise<CoziClient> {
   if (!username || !password) {
@@ -62,6 +66,15 @@ export async function getClient(username: string, password: string): Promise<Coz
     clients.delete(key);
   }
 
+  let login = logins.get(key);
+  if (!login) {
+    login = freshClient(username, password, key).finally(() => logins.delete(key));
+    logins.set(key, login);
+  }
+  return login;
+}
+
+async function freshClient(username: string, password: string, key: string): Promise<CoziClient> {
   const failure = authFailures.get(username);
   if (failure && Date.now() < failure.lockedUntil) {
     const retryInSeconds = Math.ceil((failure.lockedUntil - Date.now()) / 1000);
@@ -106,6 +119,7 @@ export async function getClient(username: string, password: string): Promise<Coz
 
 export function _resetClientCache(): void {
   clients.clear();
+  logins.clear();
   authFailures.clear();
 }
 

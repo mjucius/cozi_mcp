@@ -62,6 +62,16 @@ describe('VULN-004: credential cache TTL / re-validation', () => {
     expect(constructed[1]?.authenticate).toHaveBeenCalledOnce();
   });
 
+  it('concurrent calls on a stale entry share one login', async () => {
+    const constructed = spyConstruct();
+    const c1 = await getClient('alice', 'pw');
+    vi.setSystemTime(HOUR_MS * 0.95);
+    const [c2, c3] = await Promise.all([getClient('alice', 'pw'), getClient('alice', 'pw')]);
+    expect(c2).not.toBe(c1);
+    expect(c3).toBe(c2);
+    expect(constructed.length).toBe(2);
+  });
+
   it('does not expire before the safety-margined threshold', async () => {
     const constructed = spyConstruct();
     const c1 = await getClient('alice', 'pw');

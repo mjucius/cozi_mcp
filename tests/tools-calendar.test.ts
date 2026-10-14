@@ -469,6 +469,16 @@ describe('delete_appointment', () => {
     ).toBe(true);
   });
 
+  it('a series that vanished although other occurrences remained this month is a failed delete', async () => {
+    // Cozi drops a series from a page only once none of its days is left there.
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValueOnce([trip(['2026-05-05', '2026-05-12'])]).mockResolvedValueOnce([]);
+    m.deleteAppointment.mockResolvedValue(true);
+    await expect(
+      deleteAppointmentHandler(asClient(m), 'trip_1', 2026, 5, { scope: 'this', occurrenceDay: '2026-05-12' }),
+    ).rejects.toBeInstanceOf(WriteVerificationError);
+  });
+
   it('refuses holidays, subscribed calendars, birthdays and a scope on a one-off', async () => {
     const cases: Array<[CoziAppointment, Parameters<typeof deleteAppointmentHandler>[4]]> = [
       [makeAppointment({ id: 'x', readOnly: true }), {}],

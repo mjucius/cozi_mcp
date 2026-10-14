@@ -112,7 +112,8 @@ function occurrenceIndex(days: unknown): Map<string, string[]> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Array.isArray(refs)) continue;
     for (const ref of refs) {
       if (!isObj(ref) || typeof ref.id !== 'string') continue;
-      const start = isObj(ref.multiday) && typeof ref.multiday.startDay === 'string' ? ref.multiday.startDay : day;
+      const named = isObj(ref.multiday) ? ref.multiday.startDay : undefined;
+      const start = typeof named === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(named) ? named : day;
       const set = starts.get(ref.id) ?? new Set<string>();
       set.add(start);
       starts.set(ref.id, set);
@@ -127,6 +128,8 @@ export class CoziClient {
   private tokenExpiresIn: number | null = null;
   private tokenIssuedAtMs = 0;
   private authenticated = false;
+  /** Bumped on every accepted token, so a request can tell whether one arrived since it was sent. */
+  private tokenGeneration = 0;
   private authInFlight: Promise<void> | null = null;
   private readonly http: HttpClient;
 
@@ -139,6 +142,7 @@ export class CoziClient {
       defaultParams: { apikey: APIKEY },
       reauthenticate: () => this.authOnce(() => this.refresh()),
       authHeader: () => (this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
+      authGeneration: () => this.tokenGeneration,
     });
   }
 
@@ -190,6 +194,7 @@ export class CoziClient {
       );
     }
     this.tokenIssuedAtMs = Date.now();
+    this.tokenGeneration += 1;
     this.authenticated = true;
   }
 
@@ -623,7 +628,8 @@ export class CoziClient {
    * is never mistaken for it.
    */
   private async storedOccurrenceEdit(appt: CoziAppointment, occ: Occurrence): Promise<CoziAppointment> {
-    const home = await this.getCalendar(...yearMonth(appt.startDay));
+    const homePage = yearMonth(appt.startDay);
+    const home = await this.getCalendar(...homePage);
     const looksLike = (a: CoziAppointment): boolean =>
       a.id !== appt.id &&
       a.startDay === appt.startDay &&
@@ -633,8 +639,9 @@ export class CoziClient {
     let candidates: CoziAppointment[];
     if (occ.extent === 'day') {
       let series = home.find((a) => a.id === appt.id);
-      if (!series && appt.startDay.slice(0, 7) !== occ.day.slice(0, 7)) {
-        series = (await this.getCalendar(...yearMonth(occ.day))).find((a) => a.id === appt.id);
+      const occPage = yearMonth(occ.day);
+      if (!series && (occPage[0] !== homePage[0] || occPage[1] !== homePage[1])) {
+        series = (await this.getCalendar(...occPage)).find((a) => a.id === appt.id);
       }
       const exdates = Array.isArray(series?.recurrence?.exdates) ? series.recurrence.exdates : [];
       const standin = exdates.find(

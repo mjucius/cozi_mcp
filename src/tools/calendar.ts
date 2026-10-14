@@ -362,13 +362,19 @@ export async function deleteAppointmentHandler(
   if (!occurrence) return true;
 
   // Cozi answers 200 whatever it did, so read the series back: the one occurrence must
-  // be gone from the page, or the series must now end before it.
+  // be gone from the page, or the series must now end before it. Cozi drops a series
+  // from a page once none of its days is left there, so the series may be gone only
+  // when the delete took its last day on this page; otherwise a vanished series is
+  // a deleted series, not a removed occurrence.
   const after = (await client.getCalendar(year, month)).find((a) => a.id === appointmentId);
-  const applied =
-    !after ||
-    (occurrence.extent === 'day'
+  const remaining = existing.occurrenceDays.filter((d) =>
+    occurrence.extent === 'day' ? d !== occurrence.day : d < occurrence.day,
+  );
+  const applied = after
+    ? occurrence.extent === 'day'
       ? !after.occurrenceDays.includes(occurrence.day)
-      : after.endDay !== null && after.endDay < occurrence.day);
+      : after.endDay !== null && after.endDay < occurrence.day
+    : remaining.length === 0;
   if (!applied) {
     throw new WriteVerificationError(
       `Cozi did not remove the occurrence of '${appointmentId}' on ${occurrence.day}`,

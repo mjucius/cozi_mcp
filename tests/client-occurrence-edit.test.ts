@@ -116,8 +116,10 @@ describe('the day map of a month page', () => {
       const april = { startDay: '2026-04-30', endDay: '2026-05-02' };
       const may = { startDay: '2026-05-07', endDay: '2026-05-09' };
       return json({
-        items: { ser: item('ser', '2026-04-23', weekly()), one: item('one', '2026-05-20') },
+        items: { ser: item('ser', '2026-04-23', weekly()), one: item('one', '2026-05-20'), odd: item('odd', '2026-05-21') },
         days: {
+          // A start day in any other shape than the day keys is not taken over.
+          '2026-05-21': [{ id: 'odd', multiday: { startDay: '2026-05-21T00:00:00', endDay: '2026-05-22' } }],
           '2026-05-08': [{ id: 'ser', multiday: may }],
           '2026-05-02': [{ id: 'ser', multiday: april }],
           '2026-05-01': [{ id: 'ser', multiday: april }],
@@ -130,5 +132,6 @@ describe('the day map of a month page', () => {
     // The occurrence that began in April is listed by that day.
     expect(page.find((a) => a.id === 'ser')?.occurrenceDays).toEqual(['2026-04-30', '2026-05-07']);
     expect(page.find((a) => a.id === 'one')?.occurrenceDays).toEqual(['2026-05-20']);
+    expect(page.find((a) => a.id === 'odd')?.occurrenceDays).toEqual(['2026-05-21']);
   });
 });

@@ -13,7 +13,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   so every entry has its occurrence's `day` and `end_day`. The 2.5.0 `covered_days`
   entry is gone. An occurrence that began in the previous month is listed by that
   day. A series with no occurrence left in a month is not listed for that month
-  (Cozi drops it from the page).
+  (Cozi drops it from the page). `search_calendar` reads the same map, so its
+  `last_day` and `next_days` for a multi-day series are occurrence start days too.
 - Documented that, through the MCP server, an expiring token is renewed by a
   password login at 90% of its life (so a changed password is noticed); the
   refresh cookie serves a 401 mid-session.

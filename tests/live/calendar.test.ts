@@ -550,6 +550,23 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       expect(await days(r.id, JAN)).toEqual([]);
     });
 
+    it('an occurrence that began last month is edited from this page: the stand-in keeps that day and is found', async () => {
+      // The edit is posted to the page of the start day sent (January here), while the
+      // caller named February; the series then has no January day left and is gone from
+      // that page, so the stand-in is matched by what was sent.
+      const r = await series('straddle edit', `${d(JAN, 30)}T09:00:00`, `${d(FEB, 1)}T17:00:00`, { frequency: 'weekly', until: d(FEB, 13) });
+      const standin = await updateAppointmentHandler(live.client, r.id, Y, FEB, { scope: 'this', occurrenceDay: d(JAN, 30), notes: 'own copy' });
+      live.track(standin.id, Y, JAN);
+      expect([standin.day, standin.end_day, standin.end, standin.notes, standin.recurring]).toEqual([
+        d(JAN, 30), d(FEB, 1), `${d(FEB, 1)}T17:00`, 'own copy', undefined,
+      ]);
+      const feb = await getCalendarHandler(live.client, Y, FEB);
+      expect(feb.filter((a) => a.id === r.id).map((a) => a.day)).toEqual([d(FEB, 6), d(FEB, 13)]);
+      expect(feb.find((a) => a.id === standin.id)).toEqual(standin);
+      expect(await days(r.id, JAN)).toEqual([]);
+      expect(await days(standin.id, JAN)).toEqual([d(JAN, 30)]);
+    });
+
     it("a series' only occurrence in a month: an edit returns the stand-in, a delete empties the page, and Cozi drops the series from it", async () => {
       const edited = await series('only one edit', `${d(JAN, 29)}T07:00:00`, `${d(JAN, 29)}T07:30:00`, { frequency: 'weekly', until: d(FEB, 12) });
       const standin = await updateAppointmentHandler(live.client, edited.id, Y, JAN, { scope: 'this', occurrenceDay: d(JAN, 29), notes: 'own copy' });
@@ -583,18 +600,26 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
         { repeat: { frequency: 'weekly', until: sd(25) } },
       );
       live.track(rec.id, SY, SM);
+      // Fri 18:00 – Sat 12:00, weekly: a multi-day series is reported by occurrence start days.
+      const trip = await createAppointmentHandler(
+        live.client, subj(`${token} trip`), `${sd(7)}T18:00:00`, `${sd(8)}T12:00:00`, undefined, false, '', undefined,
+        { repeat: { frequency: 'weekly', until: sd(21) } },
+      );
+      live.track(trip.id, SY, SM);
 
       // Cozi's search index trails writes by a few seconds.
       let appointments: Awaited<ReturnType<typeof searchCalendarHandler>>['appointments'] = [];
-      for (let i = 0; i < 15 && appointments.length < 2; i++) {
+      for (let i = 0; i < 15 && appointments.length < 3; i++) {
         if (i) await new Promise((r) => setTimeout(r, 2000));
         appointments = (await searchCalendarHandler(live.client, token)).appointments;
       }
-      expect(appointments.map((a) => a.id).sort()).toEqual([one.id, rec.id].sort());
+      expect(appointments.map((a) => a.id).sort()).toEqual([one.id, rec.id, trip.id].sort());
       expect(appointments.find((a) => a.id === one.id)).toMatchObject({ day: sd(18), start: `${sd(18)}T10:00` });
       // Every occurrence is in the past, so only the latest one is reported.
       const series = appointments.find((a) => a.id === rec.id)!;
       expect([series.recurring, series.last_day, series.next_days]).toEqual([true, sd(25), undefined]);
+      const multi = appointments.find((a) => a.id === trip.id)!;
+      expect([multi.recurring, multi.day, multi.end_day, multi.last_day, multi.next_days]).toEqual([true, sd(7), sd(8), sd(21), undefined]);
     });
   });
 
