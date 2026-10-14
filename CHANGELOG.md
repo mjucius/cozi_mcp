@@ -4,6 +4,36 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **A multi-day recurring series is listed once per occurrence too**, like a
+  same-day one: Cozi's day map names the occurrence each covered day belongs to,
+  so every entry has its occurrence's `day` and `end_day`. The 2.5.0 `covered_days`
+  entry is gone. An occurrence that began in the previous month is listed by that
+  day. A series with no occurrence left in a month is not listed for that month
+  (Cozi drops it from the page).
+- Documented that, through the MCP server, an expiring token is renewed by a
+  password login at 90% of its life (so a changed password is noticed); the
+  refresh cookie serves a 401 mid-session.
+
+### Fixed
+
+- A scoped edit of a multi-day series accepted any day the occurrence covered and
+  moved the changed copy (or the split-off series) to that day; one past the
+  series' end made the whole series vanish. `occurrence_day` is now exactly the
+  `day` get_calendar lists, the occurrence's first.
+- Editing the only occurrence a series has in a month (a monthly series, say) no
+  longer fails with "the changed copy could not be found": Cozi drops a series
+  from a month page once none of its days is left there, and the stand-in is now
+  looked up where it lives.
+- After a `this_and_following` edit the new series is told apart from a one-off
+  with the same subject on that day, and an ambiguous read-back is reported
+  rather than guessed.
+- Concurrent tool calls share one login or token refresh instead of each renewing
+  the token, and a request that lost a race to a renewed token replays with it.
+
 ## [2.5.0] - 2026-10-14
 
 The Cozi API calls were audited against Cozi's own web client (its public

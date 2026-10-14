@@ -331,17 +331,18 @@ describe('expandAppt', () => {
     expect(out.every((o) => o.recurring)).toBe(true);
   });
 
-  it('keeps a multi-day series as one entry with the days it covers', () => {
+  it('lists a multi-day series once per occurrence too, on the start day Cozi gives each covered day', () => {
     const a = makeAppointment({
       ...weekly, startTime: { h: 22, m: 0 }, endTime: { h: 2, m: 0 }, dateSpan: 1,
-      occurrenceDays: ['2026-02-03', '2026-02-04'],
+      occurrenceDays: ['2026-02-03', '2026-02-10'],
     });
-    const out = expandAppt(a);
-    expect(out).toHaveLength(1);
-    expect(out[0]!.covered_days).toEqual(['2026-02-03', '2026-02-04']);
+    expect(expandAppt(a).map((o) => [o.day, o.end, o.end_day])).toEqual([
+      ['2026-02-03', '2026-02-04T02:00', '2026-02-04'],
+      ['2026-02-10', '2026-02-11T02:00', '2026-02-11'],
+    ]);
   });
 
-  it('keeps one entry for a series with no occurrence left this month, and for one-offs', () => {
+  it('falls back to one entry for a series on a page without a day map, and for one-offs', () => {
     expect(expandAppt(makeAppointment({ ...weekly, occurrenceDays: [] }))).toHaveLength(1);
     expect(expandAppt(makeAppointment({ occurrenceDays: ['2026-05-15'] }))).toEqual([slimAppt(makeAppointment())]);
   });

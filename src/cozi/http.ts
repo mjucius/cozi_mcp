@@ -123,9 +123,10 @@ export class HttpClient {
       await this.gate();
 
       let res: Response;
+      const headers = this.buildHeaders(opts.headers, requireAuth);
       const init: RequestInit = {
         method: opts.method,
-        headers: this.buildHeaders(opts.headers, requireAuth),
+        headers,
         signal: AbortSignal.timeout(this.requestTimeoutMs),
       };
       if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
@@ -153,7 +154,10 @@ export class HttpClient {
 
       if (res.status === 401) {
         if (attempt === 0 && requireAuth && this.reauthenticate) {
-          await this.reauthenticate();
+          // A request made alongside this one may already have renewed the token
+          // while this one was in flight; then replaying with it is all it takes.
+          const current = this.authHeader?.()['Authorization'];
+          if (current === undefined || current === headers['Authorization']) await this.reauthenticate();
           continue;
         }
         throw new AuthenticationError('Authentication failed', res.status, body);

@@ -49,7 +49,11 @@ export async function getClient(username: string, password: string): Promise<Coz
   const key = cacheKey(username, password);
 
   // VULN-004: cache hits are re-validated once the token nears expiry so a
-  // rotated/revoked password stops working instead of living forever.
+  // rotated/revoked password stops working instead of living forever. This fires
+  // at 90% of the token's life, before the client's own cookie refresh (60 s
+  // before expiry) would, and on purpose: a refresh cookie outlives a changed
+  // password, so through this server a token is only ever renewed by a password
+  // login. The cookie refresh still serves a 401 in the middle of a session.
   const entry = clients.get(key);
   if (entry) {
     const life = entry.client.tokenLifetimeMs;

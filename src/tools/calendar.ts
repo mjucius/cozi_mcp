@@ -423,14 +423,14 @@ export function registerCalendarTools(
         'Appointments for one month. ' +
         'Returns: [{id, subject, day, all_day, start?, end?, end_day?, attendees?, location?, notes?, ' +
         'reminders?, kind?, read_only?, source?, recurring?, recurrence?, series_start?, series_end?, ' +
-        'skipped_days?, covered_days?}]. ' +
+        'skipped_days?}]. ' +
         '`day` is the day the entry happens; `end_day` appears only on multi-day events, which are ' +
         'listed in every month they overlap, so `day` may fall outside the month asked for. ' +
         'A recurring series (`recurring: true`) is listed once per occurrence in the month, as Cozi ' +
-        'itself expands it: each entry carries the series `id`, its own `day`, and `series_start`. ' +
-        'Occurrences deleted in Cozi are already left out (and named in `skipped_days`). A multi-day ' +
-        'recurring series is instead ONE entry whose `covered_days` lists every day it covers this ' +
-        'month. `kind` marks items that are not plain appointments (e.g. "birthday"); `read_only` ' +
+        'itself expands it: each entry carries the series `id`, its own `day` (and `end_day` when ' +
+        'the occurrence spans days), and `series_start`. Occurrences deleted in Cozi are already ' +
+        'left out (and named in `skipped_days`); a series with no occurrence left in the month is ' +
+        'not listed. `kind` marks items that are not plain appointments (e.g. "birthday"); `read_only` ' +
         'items (holidays, subscribed calendars, with `source` naming the calendar) cannot be changed. ' +
         '`reminders` are minutes before the start.',
       inputSchema: { year: z.number().int(), month: z.number().int().min(1).max(12) },

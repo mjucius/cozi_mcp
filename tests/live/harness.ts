@@ -80,6 +80,8 @@ export interface RawCalendarItem {
   [k: string]: unknown;
 }
 
+export type RawDays = Record<string, Array<{ id: string; multiday?: { startDay: string; endDay: string } }>>;
+
 interface Backdoor {
   http: { request(o: unknown): Promise<unknown> };
   accountEndpoint(s: string): string;
@@ -108,6 +110,15 @@ export class Live {
       endpoint: this.back.accountEndpoint(`/calendar/${year}/${month}`),
     })) as { items?: Record<string, RawCalendarItem> };
     return new Map(Object.entries(res.items ?? {}));
+  }
+
+  /** The month page's `days` map exactly as Cozi returns it. */
+  async rawDays(year: number, month: number): Promise<RawDays> {
+    const res = (await this.back.http.request({
+      method: 'GET',
+      endpoint: this.back.accountEndpoint(`/calendar/${year}/${month}`),
+    })) as { days?: RawDays };
+    return res.days ?? {};
   }
 
   async rawPost(year: number, month: number, ops: unknown[]): Promise<unknown> {

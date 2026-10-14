@@ -14,12 +14,12 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 
 const LOGIN = { accessToken: 'tok1', accountId: 'acct_1', expiresIn: 3600 };
 
-function stubCozi(route: (url: URL, n: number) => Response | undefined) {
+function stubCozi(route: (url: URL, n: number, init?: RequestInit) => Response | undefined) {
   const calls: URL[] = [];
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = new URL(String(input));
     calls.push(url);
-    const hit = route(url, calls.filter((c) => c.pathname === url.pathname).length);
+    const hit = route(url, calls.filter((c) => c.pathname === url.pathname).length, init);
     if (hit) return hit;
     if (url.pathname.endsWith('/auth/login')) {
       return json(200, LOGIN, { 'set-cookie': 'cozi_refresh=r1; HttpOnly' });
@@ -74,6 +74,26 @@ describe('apikey and token refresh', () => {
     const client = new CoziClient('u', 'p');
     await client.getFamilyMembers(); // logs in with a token already inside the margin
     await client.getFamilyMembers(); // so this call refreshes first
+    expect(logins(calls)).toBe(1);
+    expect(reauths(calls)).toBe(1);
+  });
+
+  it('concurrent calls on a fresh client share one login', async () => {
+    const calls = stubCozi(() => undefined);
+    const client = new CoziClient('u', 'p');
+    await Promise.all([client.getFamilyMembers(), client.getLists()]);
+    expect(logins(calls)).toBe(1);
+  });
+
+  it('concurrent 401s share one reauth, and a request that raced it replays with the new token', async () => {
+    const calls = stubCozi((url, _n, init) => {
+      const auth = new Headers(init?.headers).get('authorization');
+      if (!url.pathname.includes('/auth/') && auth === 'Bearer tok1') return json(401, {});
+      if (url.pathname.endsWith('/auth/reauth')) return json(200, { ...LOGIN, accessToken: 'tok2' });
+      return undefined;
+    });
+    const client = new CoziClient('u', 'p');
+    await Promise.all([client.getFamilyMembers(), client.getLists()]);
     expect(logins(calls)).toBe(1);
     expect(reauths(calls)).toBe(1);
   });
