@@ -105,6 +105,16 @@ const parseTimeOfDay = (v: unknown): TimeOfDay | null => {
   return s ? { h, m, s } : { h, m };
 };
 
+// Cozi carries reminders top-level as `[{minutesBefore: 60}, …]` (live-verified
+// 2026-10-13). Null when the appointment has none.
+const reminderMinutes = (v: unknown): number[] | null => {
+  if (!Array.isArray(v)) return null;
+  const mins = v
+    .map((r) => (r && typeof r === 'object' ? (r as { minutesBefore?: unknown }).minutesBefore : undefined))
+    .filter((m): m is number => typeof m === 'number');
+  return mins.length ? mins.sort((a, b) => a - b) : null;
+};
+
 const optionalDateTime = z.preprocess(dateTimeStringToDate, z.date().nullable()).optional();
 
 const CoziPersonRaw = z
@@ -233,6 +243,8 @@ const CoziAppointmentRaw = z
     createdAt: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional(),
     itemDetails: z.record(z.string(), z.unknown()).nullable().optional(),
+    reminders: z.array(z.unknown()).nullable().optional(),
+    occurrenceDays: z.array(z.string()).optional(),
   })
   .passthrough();
 
@@ -274,6 +286,8 @@ export const CoziAppointmentSchema = ApptPreprocess.transform((raw) => ({
   birthYear: raw.birthYear ?? null,
   createdAt: dateTimeStringToDate(raw.createdAt),
   updatedAt: dateTimeStringToDate(raw.updatedAt),
+  reminders: reminderMinutes(raw.reminders),
+  occurrenceDays: raw.occurrenceDays ?? [],
 }));
 export type CoziAppointment = z.infer<typeof CoziAppointmentSchema>;
 
@@ -315,6 +329,8 @@ export function makeAppointment(input: CoziAppointmentInput): CoziAppointment {
     birthYear: null,
     createdAt: null,
     updatedAt: null,
+    reminders: null,
+    occurrenceDays: [],
   };
 }
 
@@ -343,12 +359,18 @@ export function isRecurring(a: Pick<CoziAppointment, 'recurrence'>): boolean {
  * `recurrence.exdates` as `{ date: 'YYYY-MM-DDTHH:MM:SS' }`. Without these a reader
  * of the rule ("Every Monday") would still count the deleted day as planned.
  * Returned sorted and de-duplicated, as bare calendar dates.
+ *
+ * An exdate carrying `standinApptId` is NOT a deletion: editing one occurrence
+ * makes Cozi exclude it from the series and store the edited copy as its own
+ * appointment, linked by that id (live-verified 2026-10-13). It is left out here;
+ * the stand-in shows up as an ordinary appointment.
  */
 export function skippedDays(a: Pick<CoziAppointment, 'recurrence'>): CalendarDate[] {
   const exdates = a.recurrence?.exdates;
   if (!Array.isArray(exdates)) return [];
   const days = new Set<CalendarDate>();
   for (const ex of exdates) {
+    if (ex && typeof ex === 'object' && (ex as { standinApptId?: unknown }).standinApptId) continue;
     const raw =
       typeof ex === 'string' ? ex : ex && typeof ex === 'object' ? (ex as { date?: unknown }).date : undefined;
     if (typeof raw !== 'string') continue;

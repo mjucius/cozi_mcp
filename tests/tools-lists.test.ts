@@ -10,6 +10,7 @@ import {
   deleteListHandler,
   getListItemsHandler,
   getListsHandler,
+  renameListHandler,
 } from '../src/tools/lists.js';
 import { familyMembersHandler } from '../src/tools/family.js';
 import { makeItem, makeList, makePerson } from './helpers/factories.js';
@@ -122,6 +123,23 @@ describe('create_list / delete_list', () => {
     expect(await deleteListHandler(asClient(m), 'L1')).toBe(true);
     expect(m.deleteList).toHaveBeenCalledOnce();
     expect(m.deleteList).toHaveBeenCalledWith('L1');
+  });
+});
+
+describe('rename_list', () => {
+  it('renames a list that exists and returns slim', async () => {
+    const m = makeMockClient();
+    m.getLists.mockResolvedValue([makeList({ id: 'L1' })]);
+    m.renameList.mockResolvedValue(makeList({ id: 'L1', title: 'Weekend', listType: 'todo' }));
+    expect(await renameListHandler(asClient(m), 'L1', 'Weekend')).toEqual({ id: 'L1', title: 'Weekend', type: 'todo' });
+    expect(m.renameList).toHaveBeenCalledWith('L1', 'Weekend');
+  });
+
+  it('an unknown list is a ResourceNotFoundError and nothing is sent', async () => {
+    const m = makeMockClient();
+    m.getLists.mockResolvedValue([makeList({ id: 'L1' })]);
+    await expect(renameListHandler(asClient(m), 'nope', 'x')).rejects.toBeInstanceOf(ResourceNotFoundError);
+    expect(m.renameList).not.toHaveBeenCalled();
   });
 });
 

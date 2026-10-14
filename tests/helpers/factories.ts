@@ -36,6 +36,7 @@ interface ItemInput {
   text?: string;
   status?: 'complete' | 'incomplete';
   position?: number | null;
+  itemType?: string | null;
 }
 export function makeItem(input: ItemInput = {}): CoziItem {
   return {
@@ -43,7 +44,7 @@ export function makeItem(input: ItemInput = {}): CoziItem {
     text: input.text ?? 'Milk',
     status: input.status ?? 'incomplete',
     position: input.position === undefined ? 0 : input.position,
-    itemType: null,
+    itemType: input.itemType ?? null,
     dueDate: null,
     notes: null,
     owner: null,
@@ -83,6 +84,13 @@ interface AppointmentInput {
   attendees?: string[];
   location?: string | null;
   notes?: string | null;
+  itemType?: string | null;
+  readOnly?: boolean | null;
+  itemSource?: string | null;
+  recurrence?: Record<string, unknown> | null;
+  endDay?: string | null;
+  reminders?: number[] | null;
+  occurrenceDays?: CalendarDate[];
 }
 export function makeAppointment(input: AppointmentInput = {}): CoziAppointment {
   return {
@@ -97,18 +105,20 @@ export function makeAppointment(input: AppointmentInput = {}): CoziAppointment {
     notes: input.notes === undefined ? 'Bring water' : input.notes,
     notesHtml: null,
     notesPlain: null,
-    itemType: null,
+    itemType: input.itemType ?? null,
     itemVersion: null,
     descriptionShort: null,
-    recurrence: null,
+    recurrence: input.recurrence ?? null,
     recurrenceStartDay: null,
-    endDay: null,
-    readOnly: null,
-    itemSource: null,
+    endDay: input.endDay ?? null,
+    readOnly: input.readOnly ?? null,
+    itemSource: input.itemSource ?? null,
     householdMember: null,
     name: null,
     birthYear: null,
     createdAt: null,
     updatedAt: null,
+    reminders: input.reminders ?? null,
+    occurrenceDays: input.occurrenceDays ?? [],
   };
 }

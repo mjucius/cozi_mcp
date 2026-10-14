@@ -23,11 +23,13 @@ export const READ_ONLY_TOOL_NAMES = [
   'get_lists',
   'get_list_items',
   'get_calendar',
+  'search_calendar',
   'today',
 ] as const;
 
 export const WRITE_TOOL_NAMES = [
   'create_list',
+  'rename_list',
   'delete_list',
   'add_item',
   'update_item',

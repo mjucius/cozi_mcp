@@ -13,10 +13,12 @@ import {
   createAppointmentHandler,
   deleteAppointmentHandler,
   getCalendarHandler,
+  searchCalendarHandler,
   updateAppointmentHandler,
 } from '../../src/tools/calendar.js';
 import type { SlimAppointment } from '../../src/tools/projections.js';
-import { Live, SANDBOX, haveCreds, stable, subj, type RawCalendarItem } from './harness.js';
+import type { RepeatInput } from '../../src/tools/calendar.js';
+import { Live, SANDBOX, SEARCH_SANDBOX, haveCreds, stable, subj, type RawCalendarItem } from './harness.js';
 
 const { year: Y, jan: JAN, feb: FEB, mar: MAR } = SANDBOX;
 const d = (month: number, day: number) => `${Y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -306,12 +308,61 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
         expect(seen?.series_end).toBe(d(FEB, 15));
       }
 
-      await updateAppointmentHandler(live.client, created!.id!, Y, JAN, { notes: 'edited' });
+      await updateAppointmentHandler(live.client, created!.id!, Y, JAN, { notes: 'edited', scope: 'series' });
       const after = (await live.client.getCalendar(Y, JAN)).find((a) => a.id === created!.id);
       expect(after?.notes).toBe('edited');
       expect(after?.location).toBe('Rec Loc');
       expect(stable((after?.recurrence as { rules?: unknown })?.rules)).toBe(ruleBefore);
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
+    });
+
+    it('get_calendar lists a series once per occurrence, on exactly the days Cozi expands it to', async () => {
+      const s = subj('occurrences');
+      await live.rawPost(Y, JAN, [{
+        itemType: 'appointment',
+        create: {
+          startDay: d(JAN, 8),
+          recurrence: { rules: [{ frequency: 'Weekly', interval: 1, byDay: ['TU'], end: { untilDay: d(FEB, 12) } }] },
+          details: { startTime: '07:00', endTime: '07:30', dateSpan: 0, subject: s, notes: '', location: '' },
+        },
+      }]);
+      const raw = await live.findRaw(Y, JAN, s);
+      live.track(raw!.id!, Y, JAN);
+      // Delete one occurrence the way the Cozi app does, so it must drop out of the listing.
+      await live.rawPost(Y, JAN, [{ itemType: 'appointment', delete: { id: raw!.id }, selectedDay: d(JAN, 22), extent: 'day' }]);
+
+      const listed = async (m: number) =>
+        (await getCalendarHandler(live.client, Y, m)).filter((a) => a.id === raw!.id);
+      const jan = await listed(JAN);
+      expect(jan.map((a) => a.day)).toEqual([d(JAN, 8), d(JAN, 15), d(JAN, 29)]);
+      expect(jan.map((a) => a.start)).toEqual([`${d(JAN, 8)}T07:00`, `${d(JAN, 15)}T07:00`, `${d(JAN, 29)}T07:00`]);
+      expect(jan.every((a) => a.series_start === d(JAN, 8) && a.recurring && a.series_end === d(FEB, 12))).toBe(true);
+      expect(jan[0]!.skipped_days).toEqual([d(JAN, 22)]);
+      expect((await listed(FEB)).map((a) => a.day)).toEqual([d(FEB, 5), d(FEB, 12)]);
+    });
+
+    it('an edit keeps reminders set in the Cozi app, though it never sends them', async () => {
+      const s = subj('reminders');
+      // Reminders are top-level on the wire and the web client re-sends them on every
+      // edit. Our edit omits them and relies on Cozi keeping what it is not sent.
+      const reminders = [{ minutesBefore: 60 }];
+      await live.rawPost(Y, JAN, [{
+        itemType: 'appointment',
+        create: {
+          startDay: d(JAN, 15),
+          reminders,
+          details: { startTime: '10:00', endTime: '11:00', dateSpan: 0, subject: s, notes: 'orig', location: '' },
+        },
+      }]);
+      const raw = await live.findRaw(Y, JAN, s);
+      expect(raw?.id).toBeTruthy();
+      live.track(raw!.id!, Y, JAN);
+      expect(raw!.reminders).toEqual(reminders);
+
+      await updateAppointmentHandler(live.client, raw!.id!, Y, JAN, { notes: 'edited' });
+      const after = await live.findRaw(Y, JAN, s);
+      expect(after?.itemDetails?.notes).toBe('edited');
+      expect(after?.reminders).toEqual(reminders);
     });
 
     it('an end before the start is rejected without touching the appointment', async () => {
@@ -321,6 +372,149 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
         updateAppointmentHandler(live.client, r.id, Y, JAN, { end: `${d(JAN, 19)}T10:00:00` }),
       ).rejects.toBeInstanceOf(ValidationError);
       expect(stable(await live.findRaw(Y, JAN, r.subject))).toBe(stable(before));
+    });
+  });
+
+  // ---- recurring writes ----------------------------------------------------------
+  // Every series here ends inside the 2019 sandbox, so a failed teardown can never
+  // leave anything on the family's present-day calendar.
+
+  describe('recurring writes', () => {
+    const days = async (id: string, m: number) =>
+      (await getCalendarHandler(live.client, Y, m)).filter((a) => a.id === id).map((a) => a.day);
+    const series = async (label: string, start: string, end: string, repeat: RepeatInput) => {
+      const r = await createAppointmentHandler(live.client, subj(label), start, end, undefined, false, '', undefined, { repeat });
+      live.track(r.id, Y, Number(start.slice(5, 7)));
+      return r;
+    };
+
+    it('repeat creates the series Cozi then expands to the expected days', async () => {
+      const wk = await series('repeat weekly', `${d(JAN, 8)}T07:00:00`, `${d(JAN, 8)}T07:30:00`, {
+        frequency: 'weekly', weekdays: ['TU', 'TH'], until: d(JAN, 24),
+      });
+      expect(wk.recurring).toBe(true);
+      expect(await days(wk.id, JAN)).toEqual([d(JAN, 8), d(JAN, 10), d(JAN, 15), d(JAN, 17), d(JAN, 22), d(JAN, 24)]);
+
+      // 2019-01-29 is the 5th Tuesday: 'weekday' means the last Tuesday of each month.
+      const last = await series('repeat last tuesday', `${d(JAN, 29)}T18:00:00`, `${d(JAN, 29)}T19:00:00`, {
+        frequency: 'monthly', monthly_by: 'weekday', until: d(MAR, 31),
+      });
+      expect(await days(last.id, FEB)).toEqual([d(FEB, 26)]);
+      expect(await days(last.id, MAR)).toEqual([d(MAR, 26)]);
+
+      const daily = await series('repeat every other day', `${d(FEB, 1)}T08:00:00`, `${d(FEB, 1)}T08:15:00`, {
+        frequency: 'daily', interval: 2, until: d(FEB, 7),
+      });
+      expect(await days(daily.id, FEB)).toEqual([d(FEB, 1), d(FEB, 3), d(FEB, 5), d(FEB, 7)]);
+
+      const yearly = await series('repeat yearly', `${d(MAR, 20)}T09:00:00`, `${d(MAR, 20)}T10:00:00`, {
+        frequency: 'yearly', until: d(MAR, 31),
+      });
+      expect(await days(yearly.id, MAR)).toEqual([d(MAR, 20)]);
+      const raw = await live.findRaw(Y, MAR, subj('repeat yearly'));
+      expect((raw!.itemDetails!.recurrence as { rules: unknown[] }).rules[0]).toMatchObject({
+        frequency: 'Yearly', byMonth: [3], byMonthDay: [20],
+      });
+    });
+
+    it('repeat on an update turns a one-off into a series', async () => {
+      const r = await create('one-off to series', `${d(JAN, 10)}T12:00:00`, `${d(JAN, 10)}T12:30:00`);
+      const u = await updateAppointmentHandler(live.client, r.id, Y, JAN, {
+        repeat: { frequency: 'weekly', until: d(JAN, 31) },
+      });
+      expect(u.recurring).toBe(true);
+      expect(await days(r.id, JAN)).toEqual([d(JAN, 10), d(JAN, 17), d(JAN, 24), d(JAN, 31)]);
+    });
+
+    it('reminders are set on create, replaced and cleared on update', async () => {
+      const s = subj('reminders tool');
+      const r = await createAppointmentHandler(
+        live.client, s, `${d(JAN, 16)}T10:00:00`, `${d(JAN, 16)}T11:00:00`, undefined, false, '', undefined,
+        { reminders: [1440, 30] },
+      );
+      live.track(r.id, Y, JAN);
+      expect(r.reminders).toEqual([30, 1440]);
+      expect((await live.findRaw(Y, JAN, s))!.reminders).toEqual([{ minutesBefore: 1440 }, { minutesBefore: 30 }]);
+
+      expect((await updateAppointmentHandler(live.client, r.id, Y, JAN, { reminders: [60] })).reminders).toEqual([60]);
+      const cleared = await updateAppointmentHandler(live.client, r.id, Y, JAN, { reminders: [] });
+      expect(cleared.reminders).toBeUndefined();
+      expect((await live.findRaw(Y, JAN, s))!.reminders).toBeUndefined();
+    });
+
+    it("scope 'this' moves one occurrence; the rest of the series stays", async () => {
+      const r = await series('edit one', `${d(JAN, 8)}T07:00:00`, `${d(JAN, 8)}T07:30:00`, { frequency: 'weekly', until: d(JAN, 29) });
+      await expect(
+        updateAppointmentHandler(live.client, r.id, Y, JAN, { notes: 'no scope' }),
+      ).rejects.toBeInstanceOf(ValidationError);
+
+      const moved = await updateAppointmentHandler(live.client, r.id, Y, JAN, {
+        scope: 'this', occurrenceDay: d(JAN, 15), start: `${d(JAN, 16)}T09:00:00`, end: `${d(JAN, 16)}T09:30:00`,
+      });
+      live.track(moved.id, Y, JAN);
+      expect(moved.id).not.toBe(r.id);
+      expect([moved.day, moved.start, moved.recurring]).toEqual([d(JAN, 16), `${d(JAN, 16)}T09:00`, undefined]);
+
+      const jan = await getCalendarHandler(live.client, Y, JAN);
+      expect(jan.filter((a) => a.id === r.id).map((a) => a.day)).toEqual([d(JAN, 8), d(JAN, 22), d(JAN, 29)]);
+      // An edited occurrence is not a deleted one.
+      expect(jan.find((a) => a.id === r.id)!.skipped_days).toBeUndefined();
+      expect(jan.find((a) => a.id === moved.id)).toEqual(moved);
+    });
+
+    it("scope 'this_and_following' splits the series at the occurrence", async () => {
+      const r = await series('edit following', `${d(JAN, 8)}T07:00:00`, `${d(JAN, 8)}T07:30:00`, { frequency: 'weekly', until: d(FEB, 12) });
+      const next = await updateAppointmentHandler(live.client, r.id, Y, JAN, {
+        scope: 'this_and_following', occurrenceDay: d(JAN, 22), start: `${d(JAN, 22)}T09:00:00`, end: `${d(JAN, 22)}T09:30:00`,
+      });
+      live.track(next.id, Y, JAN);
+      expect(next.id).not.toBe(r.id);
+      expect([next.day, next.start, next.recurring, next.series_end]).toEqual([d(JAN, 22), `${d(JAN, 22)}T09:00`, true, d(FEB, 12)]);
+      expect(await days(r.id, JAN)).toEqual([d(JAN, 8), d(JAN, 15)]);
+      expect(await days(next.id, JAN)).toEqual([d(JAN, 22), d(JAN, 29)]);
+      expect(await days(next.id, FEB)).toEqual([d(FEB, 5), d(FEB, 12)]);
+    });
+
+    it("delete scope 'this' and 'this_and_following' remove exactly those occurrences", async () => {
+      const r = await series('delete scoped', `${d(JAN, 8)}T07:00:00`, `${d(JAN, 8)}T07:30:00`, { frequency: 'weekly', until: d(FEB, 12) });
+      await deleteAppointmentHandler(live.client, r.id, Y, JAN, { scope: 'this', occurrenceDay: d(JAN, 15) });
+      expect(await days(r.id, JAN)).toEqual([d(JAN, 8), d(JAN, 22), d(JAN, 29)]);
+      expect((await getCalendarHandler(live.client, Y, JAN)).find((a) => a.id === r.id)!.skipped_days).toEqual([d(JAN, 15)]);
+
+      await deleteAppointmentHandler(live.client, r.id, Y, JAN, { scope: 'this_and_following', occurrenceDay: d(JAN, 29) });
+      expect(await days(r.id, JAN)).toEqual([d(JAN, 8), d(JAN, 22)]);
+      expect(await days(r.id, FEB)).toEqual([]);
+    });
+  });
+
+  // ---- search ------------------------------------------------------------------
+
+  describe('search', () => {
+    it('search_calendar finds our appointments and reports a series by its occurrences', async () => {
+      const { year: SY, month: SM } = SEARCH_SANDBOX;
+      const sd = (day: number) => `${SY}-${String(SM).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const token = 'zqxjwv';
+      const one = await createAppointmentHandler(
+        live.client, subj(`${token} one-off`), `${sd(18)}T10:00:00`, `${sd(18)}T11:00:00`, undefined, false, '', undefined,
+      );
+      live.track(one.id, SY, SM);
+      const rec = await createAppointmentHandler(
+        live.client, subj(`${token} weekly`), `${sd(4)}T07:00:00`, `${sd(4)}T07:30:00`, undefined, false, '', undefined,
+        { repeat: { frequency: 'weekly', until: sd(25) } },
+      );
+      live.track(rec.id, SY, SM);
+
+      // Cozi's search index trails writes by a few seconds.
+      let appointments: Awaited<ReturnType<typeof searchCalendarHandler>>['appointments'] = [];
+      for (let i = 0; i < 15 && appointments.length < 2; i++) {
+        if (i) await new Promise((r) => setTimeout(r, 2000));
+        appointments = (await searchCalendarHandler(live.client, token)).appointments;
+      }
+      expect(appointments.map((a) => a.id).sort()).toEqual([one.id, rec.id].sort());
+      expect(appointments.find((a) => a.id === one.id)).toMatchObject({ day: sd(18), start: `${sd(18)}T10:00` });
+      // Every occurrence is in the past, so only the latest one is reported.
+      const series = appointments.find((a) => a.id === rec.id)!;
+      expect([series.recurring, series.last_day, series.next_days]).toEqual([true, sd(25), undefined]);
     });
   });
 
@@ -349,18 +543,18 @@ describe.skipIf(!haveCreds)('live calendar conformance', () => {
       live.track(created!.id!, Y, JAN);
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
 
-      // Without delete_series the tool refuses and the series is untouched...
+      // Without a scope the tool refuses and the series is untouched...
       await expect(deleteAppointmentHandler(live.client, created!.id!, Y, JAN)).rejects.toBeInstanceOf(
         ValidationError,
       );
       expect(await live.monthsListing(created!.id!)).toEqual([JAN, FEB]);
 
       // ...and with it every occurrence goes, from every month page.
-      expect(await deleteAppointmentHandler(live.client, created!.id!, Y, JAN, true)).toBe(true);
+      expect(await deleteAppointmentHandler(live.client, created!.id!, Y, JAN, { scope: 'series' })).toBe(true);
       expect(await live.monthsListing(created!.id!)).toEqual([]);
     });
 
-    it('a one-off needs no delete_series flag', async () => {
+    it('a one-off needs no scope', async () => {
       const r = await create('delete one-off', `${d(JAN, 12)}T10:00:00`, `${d(JAN, 12)}T11:00:00`);
       expect(await deleteAppointmentHandler(live.client, r.id, Y, JAN)).toBe(true);
       expect(await live.monthsListing(r.id)).toEqual([]);

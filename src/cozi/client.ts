@@ -2,6 +2,8 @@ import {
   toApiCreateFormat,
   toApiDeleteFormat,
   toApiEditFormat,
+  type EditOptions,
+  type Occurrence,
 } from './appointment-payloads.js';
 import {
   APIError,
@@ -28,9 +30,15 @@ import {
 const BASE_URL = 'https://rest.cozi.com';
 const API_VERSION = '2004';
 const AUTH_VERSION = '2207';
-// Required by Cloudflare/Cozi as of 2026-04 (Wetzel402/py-cozi PR #3). The exact
-// build number is loose — any "coziwc|vNNN_production" value is accepted.
+const REAUTH_VERSION = '2111';
+// Required on login by Cloudflare/Cozi as of 2026-04 (Wetzel402/py-cozi PR #3). The
+// exact build number is loose — any "coziwc|vNNN_production" value is accepted. The
+// Cozi web client (bundle main.c43180f9, 2026-10-13) sends it on EVERY request, not
+// just login, so we do too: Cozi enforcing it on login without notice broke every
+// third-party client once, and resource calls are the obvious next place.
 const APIKEY = 'coziwc|v251_production';
+// Refresh the token this long before Cozi says it expires.
+const REFRESH_MARGIN_MS = 60_000;
 
 interface AuthResponse {
   accessToken?: string;
@@ -86,10 +94,30 @@ const parseTimeFromCalendar = (raw: unknown): TimeOfDay | null => {
   return { h, m };
 };
 
+/**
+ * Every day each item falls on, from a month page's `days` map
+ * (`{"2019-01-15": [{id}], …}`). Cozi expands recurring series server-side, leaves
+ * out deleted occurrences, and lists every day a multi-day item covers; the map
+ * spans exactly the requested month (live-verified 2026-10-13).
+ */
+function occurrenceIndex(days: unknown): Map<string, string[]> {
+  const index = new Map<string, string[]>();
+  if (!isObj(days)) return index;
+  for (const [day, refs] of Object.entries(days).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Array.isArray(refs)) continue;
+    for (const ref of refs) {
+      const id = isObj(ref) && typeof ref.id === 'string' ? ref.id : undefined;
+      if (id) index.set(id, [...(index.get(id) ?? []), day]);
+    }
+  }
+  return index;
+}
+
 export class CoziClient {
   private accessToken: string | null = null;
   private accountId: string | null = null;
   private tokenExpiresIn: number | null = null;
+  private tokenIssuedAtMs = 0;
   private authenticated = false;
   private readonly http: HttpClient;
 
@@ -99,10 +127,8 @@ export class CoziClient {
   ) {
     this.http = new HttpClient({
       baseUrl: BASE_URL,
-      reauthenticate: async () => {
-        this.authenticated = false;
-        await this.authenticate();
-      },
+      defaultParams: { apikey: APIKEY },
+      reauthenticate: () => this.refresh(),
       authHeader: () => (this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
     });
   }
@@ -111,11 +137,39 @@ export class CoziClient {
     const response = (await this.http.request({
       method: 'POST',
       endpoint: `/api/ext/${AUTH_VERSION}/auth/login`,
-      params: { apikey: APIKEY },
       body: { username: this.username, password: this.password, issueRefresh: true },
       requireAuth: false,
     })) as AuthResponse;
+    this.acceptToken(response);
+  }
 
+  /**
+   * Get a fresh access token without re-sending the password, the way the Cozi web
+   * client does (bundle main.c43180f9, 2026-10-13): login with `issueRefresh` sets a
+   * `cozi_refresh` cookie, which the cookie jar keeps, and an empty POST to `reauth`
+   * trades it for a new token. Verified live 2026-10-13: 200 with the same response
+   * shape as login. Falls back to a full login if the refresh is refused or the
+   * session never had one.
+   */
+  private async refresh(): Promise<void> {
+    this.authenticated = false;
+    if (this.accountId) {
+      try {
+        const response = (await this.http.request({
+          method: 'POST',
+          endpoint: `/api/ext/${REAUTH_VERSION}/${this.accountId}/auth/reauth`,
+          requireAuth: false,
+        })) as AuthResponse;
+        this.acceptToken(response);
+        return;
+      } catch {
+        // fall through to the password
+      }
+    }
+    await this.authenticate();
+  }
+
+  private acceptToken(response: AuthResponse): void {
     this.accessToken = response.accessToken ?? null;
     this.accountId = response.accountId ?? null;
     this.tokenExpiresIn = response.expiresIn ?? null;
@@ -126,6 +180,7 @@ export class CoziClient {
           [!this.accessToken && 'accessToken', !this.accountId && 'accountId'].filter(Boolean).join(' and '),
       );
     }
+    this.tokenIssuedAtMs = Date.now();
     this.authenticated = true;
   }
 
@@ -134,7 +189,9 @@ export class CoziClient {
   }
 
   private async ensureAuthenticated(): Promise<void> {
-    if (!this.authenticated) await this.authenticate();
+    if (!this.authenticated) return this.authenticate();
+    const life = this.tokenLifetimeMs;
+    if (life != null && Date.now() - this.tokenIssuedAtMs >= life - REFRESH_MARGIN_MS) await this.refresh();
   }
 
   private accountEndpoint(suffix: string): string {
@@ -179,6 +236,29 @@ export class CoziClient {
       body: { title, listType },
     });
     return CoziListSchema.parse(response);
+  }
+
+  /**
+   * Rename a list. A PUT with only `title` keeps the list's items and type, and an
+   * unknown id is a 400 rather than an upsert (live-verified 2026-10-13); the Cozi
+   * web client sends the whole list, which is not needed.
+   */
+  async renameList(listId: string, title: string): Promise<CoziList> {
+    const listSeg = idSeg(listId);
+    if (!title.trim()) throw new ValidationError('List title cannot be empty');
+    await this.ensureAuthenticated();
+    const response = await this.http.request({
+      method: 'PUT',
+      endpoint: this.accountEndpoint(`/list/${listSeg}`),
+      body: { title },
+    });
+    const list = CoziListSchema.parse(response);
+    if (list.title !== title) {
+      throw new WriteVerificationError(
+        `Cozi did not apply the rename: asked for "${title}", server returned "${list.title}"`,
+      );
+    }
+    return list;
   }
 
   async deleteList(listId: string): Promise<boolean> {
@@ -324,8 +404,9 @@ export class CoziClient {
     const appointments: CoziAppointment[] = [];
 
     if (isObj(response) && isObj(response.items)) {
+      const days = occurrenceIndex(response.days);
       for (const [itemId, itemData] of Object.entries(response.items)) {
-        const parsed = this.parseCalendarItem(itemId, itemData);
+        const parsed = this.parseCalendarItem(itemId, itemData, days.get(itemId));
         if (parsed) appointments.push(parsed);
       }
     } else if (Array.isArray(response)) {
@@ -341,7 +422,37 @@ export class CoziClient {
     return appointments;
   }
 
-  private parseCalendarItem(itemId: string, raw: unknown): CoziAppointment | null {
+  /**
+   * Cozi's calendar search (`/search/calendar/?q=`), the one the web client's search
+   * box uses. Each hit is `{highlight, item}` with a month-page-shaped item, and the
+   * `days` map lists the matching dates across the whole search window, which starts
+   * a few years back (a 2019 item is not found; 2022 is) and pages via `hasNext`.
+   * Returns the first page; `more` says whether Cozi has further pages.
+   */
+  async searchCalendar(query: string): Promise<{ appointments: CoziAppointment[]; more: boolean }> {
+    if (!query.trim()) throw new ValidationError('Search query cannot be empty');
+    await this.ensureAuthenticated();
+    const response = await this.http.request({
+      method: 'GET',
+      endpoint: this.accountEndpoint('/search/calendar/'),
+      params: { q: query },
+    });
+    const appointments: CoziAppointment[] = [];
+    if (!isObj(response)) return { appointments, more: false };
+    const days = occurrenceIndex(response.days);
+    for (const [key, hit] of Object.entries(isObj(response.items) ? response.items : {})) {
+      const item = isObj(hit) && isObj(hit.item) ? hit.item : hit;
+      // Search keys every hit, its inner `id` and its `days` entries as "<uuid>-a"
+      // (live-verified 2026-10-13); the calendar itself uses the bare uuid, which is
+      // what update/delete need. Only a uuid with a one-letter suffix is trimmed.
+      const id = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[a-z]$/.test(key) ? key.slice(0, -2) : key;
+      const parsed = this.parseCalendarItem(id, isObj(item) ? { ...item, id } : item, days.get(key));
+      if (parsed) appointments.push(parsed);
+    }
+    return { appointments, more: response.hasNext === true };
+  }
+
+  private parseCalendarItem(itemId: string, raw: unknown, occurrenceDays: string[] = []): CoziAppointment | null {
     if (!isObj(raw)) return null;
 
     const description = (raw.description as string | undefined)?.trim();
@@ -391,13 +502,17 @@ export class CoziClient {
         endDay,
         itemVersion,
         readOnly,
+        itemType: typeof raw.itemType === 'string' ? raw.itemType : null,
+        itemSource: typeof raw.itemSource === 'string' ? raw.itemSource : null,
+        reminders: raw.reminders,
+        occurrenceDays,
       });
     } catch {
       return null;
     }
   }
 
-  async createAppointment(appt: CoziAppointment): Promise<CoziAppointment> {
+  async createAppointment(appt: CoziAppointment, notifyPersons?: string[]): Promise<CoziAppointment> {
     if (!appt.subject.trim()) throw new ValidationError('Appointment subject cannot be empty');
 
     const [yearStr, monthStr] = appt.startDay.split('-');
@@ -408,7 +523,7 @@ export class CoziClient {
     const response = await this.http.request({
       method: 'POST',
       endpoint: this.accountEndpoint(`/calendar/${year}/${month}`),
-      body: [toApiCreateFormat(appt)],
+      body: [toApiCreateFormat(appt, notifyPersons)],
     });
     assertNotRejected(response, 'create');
 
@@ -444,20 +559,19 @@ export class CoziClient {
     );
   }
 
-  async updateAppointment(appt: CoziAppointment): Promise<CoziAppointment> {
+  async updateAppointment(appt: CoziAppointment, opts: EditOptions = {}): Promise<CoziAppointment> {
     if (!appt.id) throw new ValidationError('Cannot update appointment without ID');
 
-    const [yearStr, monthStr] = appt.startDay.split('-');
-    const year = Number(yearStr);
-    const month = Number(monthStr);
+    const [year, month] = yearMonth(appt.startDay);
 
     await this.ensureAuthenticated();
     const response = await this.http.request({
       method: 'POST',
       endpoint: this.accountEndpoint(`/calendar/${year}/${month}`),
-      body: [toApiEditFormat(appt)],
+      body: [toApiEditFormat(appt, opts)],
     });
     assertNotRejected(response, 'edit', appt.id);
+    if (opts.occurrence) return this.storedOccurrenceEdit(appt, opts.occurrence);
     // As with create: prefer the stored item the response carries over the merged
     // object we sent, so the caller sees what persisted.
     if (isObj(response) && isObj(response.items)) {
@@ -467,12 +581,48 @@ export class CoziClient {
     return appt;
   }
 
-  async deleteAppointment(appointmentId: string, year: number, month: number): Promise<boolean> {
+  /**
+   * The appointment Cozi stored for an occurrence edit, which is never `appt.id`
+   * itself (live-verified 2026-10-13). For one occurrence (`day`) it is a stand-in:
+   * the series gains an exdate for that day naming the stand-in's id. For this-and-
+   * following (`forward`) it is a new series starting on the new start day, while
+   * the old one now ends the day before.
+   */
+  private async storedOccurrenceEdit(appt: CoziAppointment, occ: Occurrence): Promise<CoziAppointment> {
+    let found: CoziAppointment | undefined;
+    if (occ.extent === 'day') {
+      const series = (await this.getCalendar(...yearMonth(occ.day))).find((a) => a.id === appt.id);
+      const exdates = Array.isArray(series?.recurrence?.exdates) ? series.recurrence.exdates : [];
+      const standin = exdates.find(
+        (e): e is { date: string; standinApptId: string } =>
+          isObj(e) && typeof e.date === 'string' && e.date.startsWith(occ.day) && typeof e.standinApptId === 'string',
+      )?.standinApptId;
+      if (standin) found = (await this.getCalendar(...yearMonth(appt.startDay))).find((a) => a.id === standin);
+    } else {
+      found = (await this.getCalendar(...yearMonth(appt.startDay))).find(
+        (a) => a.id !== appt.id && a.startDay === appt.startDay && a.subject === appt.subject,
+      );
+    }
+    if (!found) {
+      throw new WriteVerificationError(
+        `Cozi accepted the edit of appointment ${appt.id} on ${occ.day}, but the changed copy could not be found`,
+      );
+    }
+    return found;
+  }
+
+  async deleteAppointment(
+    appointmentId: string,
+    year: number,
+    month: number,
+    occurrence?: Occurrence,
+    notifyPersons?: string[],
+  ): Promise<boolean> {
     await this.ensureAuthenticated();
     const response = await this.http.request({
       method: 'POST',
       endpoint: this.accountEndpoint(`/calendar/${year}/${month}`),
-      body: [toApiDeleteFormat({ id: appointmentId } as CoziAppointment)],
+      body: [toApiDeleteFormat(appointmentId, occurrence, notifyPersons)],
     });
     // Note: Cozi treats deleting an unknown id as a no-op success (no rejection),
     // so this catches malformed/refused deletes, not "it was already gone".
@@ -480,3 +630,8 @@ export class CoziClient {
     return true;
   }
 }
+
+const yearMonth = (day: string): [number, number] => {
+  const [y, m] = day.split('-');
+  return [Number(y), Number(m)];
+};

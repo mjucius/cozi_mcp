@@ -43,6 +43,18 @@ export async function createListHandler(
   return { id: lst.id ?? '', title: lst.title, type: lst.listType };
 }
 
+export async function renameListHandler(
+  client: CoziClient,
+  listId: string,
+  title: string,
+): Promise<{ id: string; title: string; type: string }> {
+  if (!(await client.getLists()).some((l) => l.id === listId)) {
+    throw new ResourceNotFoundError(`List not found: ${listId}`);
+  }
+  const lst = await client.renameList(listId, title);
+  return { id: lst.id ?? '', title: lst.title, type: lst.listType };
+}
+
 export async function deleteListHandler(client: CoziClient, listId: string): Promise<boolean> {
   return client.deleteList(listId);
 }
@@ -97,6 +109,19 @@ export function registerListTools(
     },
     async ({ name, list_type }) => {
       const result = await createListHandler(await getClient(), name, list_type);
+      return toolResult(result);
+    },
+  );
+
+  server.registerTool(
+    'rename_list',
+    {
+      title: 'Rename a list',
+      description: 'Rename a list; its items stay as they are. Returns: {id, title, type}.',
+      inputSchema: { list_id: z.string().regex(ID_RE, 'Invalid id format'), title: z.string() },
+    },
+    async ({ list_id, title }) => {
+      const result = await renameListHandler(await getClient(), list_id, title);
       return toolResult(result);
     },
   );

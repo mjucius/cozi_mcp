@@ -56,6 +56,8 @@ export interface HttpClientOptions {
   retryAttempts?: number;
   requestTimeoutMs?: number;
   minRequestIntervalMs?: number;
+  /** Query params sent on every request (per-request `params` win on a clash). */
+  defaultParams?: Record<string, string>;
   reauthenticate?: () => Promise<void>;
   authHeader?: () => Record<string, string>;
 }
@@ -84,6 +86,7 @@ export class HttpClient {
   private readonly retryAttempts: number;
   private readonly requestTimeoutMs: number;
   private readonly minRequestIntervalMs: number;
+  private readonly defaultParams: Record<string, string>;
   private readonly reauthenticate?: () => Promise<void>;
   private readonly authHeader?: () => Record<string, string>;
   private lastRequestAtMs = 0;
@@ -93,6 +96,7 @@ export class HttpClient {
     this.retryAttempts = opts.retryAttempts ?? 3;
     this.requestTimeoutMs = opts.requestTimeoutMs ?? 30_000;
     this.minRequestIntervalMs = opts.minRequestIntervalMs ?? 100;
+    this.defaultParams = opts.defaultParams ?? {};
     if (opts.reauthenticate) this.reauthenticate = opts.reauthenticate;
     if (opts.authHeader) this.authHeader = opts.authHeader;
   }
@@ -180,7 +184,7 @@ export class HttpClient {
 
   private buildUrl(endpoint: string, params?: Record<string, string>): string {
     const url = new URL(endpoint.startsWith('/') ? endpoint : `/${endpoint}`, `${this.baseUrl}/`);
-    if (params) for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    for (const [k, v] of Object.entries({ ...this.defaultParams, ...params })) url.searchParams.set(k, v);
     return url.toString();
   }
 

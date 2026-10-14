@@ -4,6 +4,44 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-10-14
+
+The Cozi API calls were audited against Cozi's own web client (its public
+JavaScript, plus write-then-observe probes of the live API). The ten calls the MCP
+already made were correct; this release adds what the web client does that the
+MCP did not.
+
+### Changed
+
+- **`get_calendar` lists each occurrence of a recurring series** on its own day,
+  from the day map Cozi returns with every month (so Cozi, not the assistant, works
+  out the dates). Each carries the series `id` and `series_start`. A multi-day
+  series stays one entry with `covered_days`.
+- **`delete_appointment` takes `scope` instead of `delete_series`** (breaking):
+  `'this'` + `occurrence_day`, `'this_and_following'`, or `'series'`.
+  `update_appointment` takes the same `scope`, now required on a recurring series,
+  since every occurrence carries the same id.
+- Holidays, subscribed calendars and birthdays are refused by update and delete
+  rather than being sent as plain appointments.
+- The apikey is sent on every request, as the web client does, and an expiring
+  token is renewed through Cozi's refresh cookie instead of the password.
+
+### Added
+
+- Single-occurrence and this-and-following edits and deletes of a series.
+- `repeat` on `create_appointment` and `update_appointment` (daily, weekly on
+  chosen days, monthly by date or nth weekday, yearly; optional end date).
+- `reminders` on create and update, and in `get_calendar`.
+- `search_calendar` (Cozi's own calendar search) and `rename_list`.
+- `notify`, off by default, to send Cozi's change notification to attendees.
+- `get_calendar` entries carry `kind`, `read_only` and `source`;
+  `get_list_items` flags section headings with `header: true`.
+
+### Fixed
+
+- `skipped_days` no longer reports an occurrence that was edited (and so moved
+  to its own appointment) as deleted.
+
 ## [2.4.0] - 2026-10-13
 
 Recurring series are now visible as series, and deleting one takes an explicit
@@ -268,6 +306,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.5.0]: https://github.com/mjucius/cozi_mcp/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/mjucius/cozi_mcp/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/mjucius/cozi_mcp/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/mjucius/cozi_mcp/compare/v2.2.2...v2.2.3

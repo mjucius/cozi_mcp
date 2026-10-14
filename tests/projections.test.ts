@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { skippedDays } from '../src/cozi/index.js';
 import {
+  expandAppt,
   slimAppt,
   slimItem,
   slimListSummary,
@@ -289,5 +291,75 @@ describe('slimAppt', () => {
       'updatedAt',
     ];
     for (const f of forbidden) expect(keys.has(f)).toBe(false);
+  });
+});
+
+describe('list section headers', () => {
+  it('are flagged and left out of the counts', () => {
+    const lst = makeList({
+      items: [makeItem({ id: 'h', text: 'PRODUCE', itemType: 'header' }), makeItem({ id: 'a' })],
+    });
+    expect(slimItem(lst.items[0]!).header).toBe(true);
+    expect('header' in slimItem(lst.items[1]!)).toBe(false);
+    expect(slimListSummary(lst).item_count).toBe(1);
+  });
+});
+
+describe('calendar item kinds', () => {
+  it('surfaces birthday, read-only, source and reminders only when set', () => {
+    const plain = slimAppt(makeAppointment({ itemType: 'appointment' }));
+    expect(['kind', 'read_only', 'source', 'reminders'].some((k) => k in plain)).toBe(false);
+
+    const holiday = slimAppt(makeAppointment({ readOnly: true, itemSource: 'Holiday US - Cozi' }));
+    expect(holiday.read_only).toBe(true);
+    expect(holiday.source).toBe('Holiday US - Cozi');
+    expect(slimAppt(makeAppointment({ itemType: 'birthday' })).kind).toBe('birthday');
+    expect(slimAppt(makeAppointment({ reminders: [30, 1440] })).reminders).toEqual([30, 1440]);
+  });
+});
+
+describe('expandAppt', () => {
+  const weekly = { recurrence: { rules: [{ frequency: 'Weekly', byDay: ['TU'] }] } };
+
+  it('lists a same-day series once per occurrence Cozi expanded it to', () => {
+    const a = makeAppointment({ ...weekly, startDay: '2026-01-06', occurrenceDays: ['2026-02-03', '2026-02-10'] });
+    const out = expandAppt(a);
+    expect(out.map((o) => [o.day, o.start, o.end, o.series_start, o.id])).toEqual([
+      ['2026-02-03', '2026-02-03T10:00', '2026-02-03T11:00', '2026-01-06', 'appt_1'],
+      ['2026-02-10', '2026-02-10T10:00', '2026-02-10T11:00', '2026-01-06', 'appt_1'],
+    ]);
+    expect(out.every((o) => o.recurring)).toBe(true);
+  });
+
+  it('keeps a multi-day series as one entry with the days it covers', () => {
+    const a = makeAppointment({
+      ...weekly, startTime: { h: 22, m: 0 }, endTime: { h: 2, m: 0 }, dateSpan: 1,
+      occurrenceDays: ['2026-02-03', '2026-02-04'],
+    });
+    const out = expandAppt(a);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.covered_days).toEqual(['2026-02-03', '2026-02-04']);
+  });
+
+  it('keeps one entry for a series with no occurrence left this month, and for one-offs', () => {
+    expect(expandAppt(makeAppointment({ ...weekly, occurrenceDays: [] }))).toHaveLength(1);
+    expect(expandAppt(makeAppointment({ occurrenceDays: ['2026-05-15'] }))).toEqual([slimAppt(makeAppointment())]);
+  });
+
+  it('expands an all-day yearly item such as a birthday onto its day', () => {
+    const b = makeAppointment({
+      itemType: 'birthday', startDay: '2001-03-09', startTime: null, endTime: null, dateSpan: 1,
+      recurrence: { rules: [{ frequency: 'Yearly' }] }, occurrenceDays: ['2026-03-09'],
+    });
+    expect(expandAppt(b).map((o) => [o.day, o.kind, o.series_start])).toEqual([['2026-03-09', 'birthday', '2001-03-09']]);
+  });
+});
+
+describe('skippedDays', () => {
+  it('leaves out occurrences that were edited (stand-ins), not deleted', () => {
+    const a = makeAppointment({
+      recurrence: { exdates: [{ date: '2026-01-13T07:00:00' }, { date: '2026-01-20T07:00:00', standinApptId: 'x' }] },
+    });
+    expect(skippedDays(a)).toEqual(['2026-01-13']);
   });
 });

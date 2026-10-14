@@ -11,6 +11,7 @@ import {
   deleteListHandler,
   getListItemsHandler,
   getListsHandler,
+  renameListHandler,
 } from '../../src/tools/lists.js';
 import { Live, MARK, haveCreds } from './harness.js';
 
@@ -52,6 +53,22 @@ describe.skipIf(!haveCreds)('live list conformance', () => {
     const members = await familyMembersHandler(live.client);
     expect(members.length).toBeGreaterThan(0);
     for (const m of members) expect(m.id).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it('rename_list changes only the title; the items and type stay', async () => {
+    const created = await createListHandler(live.client, listTitle('rename before'), 'todo');
+    createdListIds.push(created.id);
+    await addItemHandler(live.client, created.id, 'kept one', 0);
+    await addItemHandler(live.client, created.id, 'kept two', 0);
+    const before = await rawList(created.id);
+
+    expect(await renameListHandler(live.client, created.id, listTitle('rename after'))).toEqual({
+      id: created.id, title: listTitle('rename after'), type: 'todo',
+    });
+    const after = await rawList(created.id);
+    expect(after?.title).toBe(listTitle('rename after'));
+    expect(after?.listType).toBe('todo');
+    expect(after?.items).toEqual(before?.items);
   });
 
   it('create_list persists with the right type and is visible in get_lists', async () => {

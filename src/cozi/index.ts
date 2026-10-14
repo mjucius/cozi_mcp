@@ -41,3 +41,4 @@ export {
   toApiDeleteFormat,
   toApiEditFormat,
 } from './appointment-payloads.js';
+export type { EditOptions, Occurrence } from './appointment-payloads.js';
