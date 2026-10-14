@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.0] - 2026-10-14
 
 The Cozi API calls were audited against Cozi's own web client (its public
 JavaScript, plus write-then-observe probes of the live API). The ten calls the MCP
@@ -306,6 +306,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.5.0]: https://github.com/mjucius/cozi_mcp/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/mjucius/cozi_mcp/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/mjucius/cozi_mcp/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/mjucius/cozi_mcp/compare/v2.2.2...v2.2.3
