@@ -60,6 +60,8 @@ export interface HttpClientOptions {
   defaultParams?: Record<string, string>;
   reauthenticate?: () => Promise<void>;
   authHeader?: () => Record<string, string>;
+  /** A counter that changes whenever a new token is accepted (see the 401 path). */
+  authGeneration?: () => number;
 }
 
 export type HttpResponse = Record<string, unknown> | unknown[] | true;
@@ -89,6 +91,7 @@ export class HttpClient {
   private readonly defaultParams: Record<string, string>;
   private readonly reauthenticate?: () => Promise<void>;
   private readonly authHeader?: () => Record<string, string>;
+  private readonly authGeneration?: () => number;
   private lastRequestAtMs = 0;
 
   constructor(opts: HttpClientOptions) {
@@ -99,6 +102,7 @@ export class HttpClient {
     this.defaultParams = opts.defaultParams ?? {};
     if (opts.reauthenticate) this.reauthenticate = opts.reauthenticate;
     if (opts.authHeader) this.authHeader = opts.authHeader;
+    if (opts.authGeneration) this.authGeneration = opts.authGeneration;
   }
 
   async request(opts: RequestOptions): Promise<HttpResponse> {
@@ -123,6 +127,7 @@ export class HttpClient {
       await this.gate();
 
       let res: Response;
+      const sentWith = this.authGeneration?.();
       const init: RequestInit = {
         method: opts.method,
         headers: this.buildHeaders(opts.headers, requireAuth),
@@ -153,7 +158,9 @@ export class HttpClient {
 
       if (res.status === 401) {
         if (attempt === 0 && requireAuth && this.reauthenticate) {
-          await this.reauthenticate();
+          // A request made alongside this one may already have renewed the token
+          // while this one was in flight; then replaying with it is all it takes.
+          if (sentWith === undefined || this.authGeneration?.() === sentWith) await this.reauthenticate();
           continue;
         }
         throw new AuthenticationError('Authentication failed', res.status, body);

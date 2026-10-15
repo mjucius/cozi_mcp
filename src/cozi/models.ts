@@ -244,6 +244,8 @@ const CoziAppointmentRaw = z
     updatedAt: z.string().nullable().optional(),
     itemDetails: z.record(z.string(), z.unknown()).nullable().optional(),
     reminders: z.array(z.unknown()).nullable().optional(),
+    // First day of each occurrence on the month page, from Cozi's day map (see
+    // occurrenceIndex in client.ts): a one-off's own day, a series' once per occurrence.
     occurrenceDays: z.array(z.string()).optional(),
   })
   .passthrough();

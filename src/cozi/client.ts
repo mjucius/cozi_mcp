@@ -24,6 +24,7 @@ import {
   CoziPersonSchema,
   ItemStatus,
   ListType,
+  isRecurring,
   type TimeOfDay,
 } from './models.js';
 
@@ -95,22 +96,30 @@ const parseTimeFromCalendar = (raw: unknown): TimeOfDay | null => {
 };
 
 /**
- * Every day each item falls on, from a month page's `days` map
- * (`{"2019-01-15": [{id}], …}`). Cozi expands recurring series server-side, leaves
- * out deleted occurrences, and lists every day a multi-day item covers; the map
- * spans exactly the requested month (live-verified 2026-10-13).
+ * The first day of each occurrence of every item on a month page, from its `days`
+ * map (`{"2019-01-15": [{id}], …}`). Cozi expands recurring series server-side,
+ * leaves out deleted occurrences, and lists a multi-day item on every day it covers,
+ * each such entry naming the occurrence it belongs to as `multiday: {startDay,
+ * endDay}` (live-verified 2026-10-14; `endDay` is the end instant's day, one past
+ * the last day of an all-day item). That start day is what is kept, once per
+ * occurrence, and it may lie in the previous month. The map spans exactly the
+ * requested month (live-verified 2026-10-13).
  */
 function occurrenceIndex(days: unknown): Map<string, string[]> {
-  const index = new Map<string, string[]>();
-  if (!isObj(days)) return index;
-  for (const [day, refs] of Object.entries(days).sort(([a], [b]) => a.localeCompare(b))) {
+  const starts = new Map<string, Set<string>>();
+  if (!isObj(days)) return new Map();
+  for (const [day, refs] of Object.entries(days)) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Array.isArray(refs)) continue;
     for (const ref of refs) {
-      const id = isObj(ref) && typeof ref.id === 'string' ? ref.id : undefined;
-      if (id) index.set(id, [...(index.get(id) ?? []), day]);
+      if (!isObj(ref) || typeof ref.id !== 'string') continue;
+      const named = isObj(ref.multiday) ? ref.multiday.startDay : undefined;
+      const start = typeof named === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(named) ? named : day;
+      const set = starts.get(ref.id) ?? new Set<string>();
+      set.add(start);
+      starts.set(ref.id, set);
     }
   }
-  return index;
+  return new Map([...starts].map(([id, set]) => [id, [...set].sort()]));
 }
 
 export class CoziClient {
@@ -119,6 +128,9 @@ export class CoziClient {
   private tokenExpiresIn: number | null = null;
   private tokenIssuedAtMs = 0;
   private authenticated = false;
+  /** Bumped on every accepted token, so a request can tell whether one arrived since it was sent. */
+  private tokenGeneration = 0;
+  private authInFlight: Promise<void> | null = null;
   private readonly http: HttpClient;
 
   constructor(
@@ -128,8 +140,9 @@ export class CoziClient {
     this.http = new HttpClient({
       baseUrl: BASE_URL,
       defaultParams: { apikey: APIKEY },
-      reauthenticate: () => this.refresh(),
+      reauthenticate: () => this.authOnce(() => this.refresh()),
       authHeader: () => (this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
+      authGeneration: () => this.tokenGeneration,
     });
   }
 
@@ -181,6 +194,7 @@ export class CoziClient {
       );
     }
     this.tokenIssuedAtMs = Date.now();
+    this.tokenGeneration += 1;
     this.authenticated = true;
   }
 
@@ -189,9 +203,25 @@ export class CoziClient {
   }
 
   private async ensureAuthenticated(): Promise<void> {
-    if (!this.authenticated) return this.authenticate();
+    if (!this.authenticated) return this.authOnce(() => this.authenticate());
     const life = this.tokenLifetimeMs;
-    if (life != null && Date.now() - this.tokenIssuedAtMs >= life - REFRESH_MARGIN_MS) await this.refresh();
+    if (life != null && Date.now() - this.tokenIssuedAtMs >= life - REFRESH_MARGIN_MS) {
+      await this.authOnce(() => this.refresh());
+    }
+  }
+
+  /**
+   * One login or refresh at a time. Tool calls made in parallel share a client, and
+   * each would otherwise renew the token on its own (every 401 of a replayed batch
+   * reauthenticating again); a caller that finds one in flight waits for it instead.
+   */
+  private authOnce(run: () => Promise<void>): Promise<void> {
+    if (!this.authInFlight) {
+      this.authInFlight = run().finally(() => {
+        this.authInFlight = null;
+      });
+    }
+    return this.authInFlight;
   }
 
   private accountEndpoint(suffix: string): string {
@@ -586,29 +616,55 @@ export class CoziClient {
    * itself (live-verified 2026-10-13). For one occurrence (`day`) it is a stand-in:
    * the series gains an exdate for that day naming the stand-in's id. For this-and-
    * following (`forward`) it is a new series starting on the new start day, while
-   * the old one now ends the day before.
+   * the old one now ends the day before. Either lives on the page of `appt.startDay`.
+   *
+   * The series itself may be gone from that page: a month with no day of it left is
+   * not listed at all (live-verified 2026-10-14), which is just what editing a
+   * series' only occurrence that month leaves behind. Its exdate is then read from
+   * the occurrence's own page if that is another month, and failing that the
+   * stand-in is matched by what was sent: the one non-recurring appointment with
+   * that subject, day and times. The new series of a `forward` edit is matched the
+   * same way among the recurring ones, so a one-off with the same subject that day
+   * is never mistaken for it.
    */
   private async storedOccurrenceEdit(appt: CoziAppointment, occ: Occurrence): Promise<CoziAppointment> {
-    let found: CoziAppointment | undefined;
+    const homePage = yearMonth(appt.startDay);
+    const home = await this.getCalendar(...homePage);
+    const looksLike = (a: CoziAppointment): boolean =>
+      a.id !== appt.id &&
+      a.startDay === appt.startDay &&
+      a.subject === appt.subject &&
+      sameTime(a.startTime, appt.startTime) &&
+      sameTime(a.endTime, appt.endTime);
+    let candidates: CoziAppointment[];
     if (occ.extent === 'day') {
-      const series = (await this.getCalendar(...yearMonth(occ.day))).find((a) => a.id === appt.id);
+      let series = home.find((a) => a.id === appt.id);
+      const occPage = yearMonth(occ.day);
+      if (!series && (occPage[0] !== homePage[0] || occPage[1] !== homePage[1])) {
+        series = (await this.getCalendar(...occPage)).find((a) => a.id === appt.id);
+      }
       const exdates = Array.isArray(series?.recurrence?.exdates) ? series.recurrence.exdates : [];
       const standin = exdates.find(
         (e): e is { date: string; standinApptId: string } =>
           isObj(e) && typeof e.date === 'string' && e.date.startsWith(occ.day) && typeof e.standinApptId === 'string',
       )?.standinApptId;
-      if (standin) found = (await this.getCalendar(...yearMonth(appt.startDay))).find((a) => a.id === standin);
+      // A series that is listed but names no stand-in has no copy to find; only a series
+      // Cozi has dropped from the page leaves the look-alike match to go on.
+      if (standin) candidates = home.filter((a) => a.id === standin);
+      else if (series) candidates = [];
+      else candidates = home.filter((a) => looksLike(a) && !isRecurring(a));
     } else {
-      found = (await this.getCalendar(...yearMonth(appt.startDay))).find(
-        (a) => a.id !== appt.id && a.startDay === appt.startDay && a.subject === appt.subject,
-      );
+      candidates = home.filter((a) => looksLike(a) && isRecurring(a));
     }
-    if (!found) {
+    if (candidates.length !== 1) {
       throw new WriteVerificationError(
-        `Cozi accepted the edit of appointment ${appt.id} on ${occ.day}, but the changed copy could not be found`,
+        `Cozi accepted the edit of appointment ${appt.id} on ${occ.day}, but the changed copy ` +
+          (candidates.length
+            ? `cannot be told apart from ${candidates.length - 1} other appointment(s) just like it`
+            : 'could not be found'),
       );
     }
-    return found;
+    return candidates[0]!;
   }
 
   async deleteAppointment(
@@ -634,4 +690,11 @@ export class CoziClient {
 const yearMonth = (day: string): [number, number] => {
   const [y, m] = day.split('-');
   return [Number(y), Number(m)];
+};
+
+// Cozi stores midnight as 00:00:00, which parseTimeFromCalendar reads back as null, so
+// a missing time and midnight are the same time here.
+const sameTime = (a: TimeOfDay | null, b: TimeOfDay | null): boolean => {
+  const [x, y] = [a ?? { h: 0, m: 0 }, b ?? { h: 0, m: 0 }];
+  return x.h === y.h && x.m === y.m;
 };

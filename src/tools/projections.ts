@@ -65,11 +65,6 @@ export interface SlimAppointment {
    * series is listed once per occurrence, so `day` is the occurrence, not the start.
    */
   series_start?: string;
-  /**
-   * Every day of the month this multi-day recurring series covers, as Cozi lists
-   * them. Such a series is not split into occurrences; each run of days is one.
-   */
-  covered_days?: string[];
   /** Item type when it is not a plain appointment, e.g. "birthday". */
   kind?: string;
   /** Cozi will not let this item be changed here (a holiday or subscribed calendar). */
@@ -114,24 +109,17 @@ export function slimItem(i: CoziItem): SlimItem {
 }
 
 /**
- * How many days past its start an occurrence ends (0 for a same-day event). An
- * occurrence of a series spans the same as the series' first one.
- */
-const coveredSpan = (a: CoziAppointment): number =>
-  Math.round((Date.parse(lastDayOf(a.startDay, a.dateSpan, a.startTime == null)) - Date.parse(a.startDay)) / 86_400_000);
-
-/**
- * The month's entries for one appointment. A same-day recurring series is listed
- * once per occurrence, on the days Cozi itself expands it to (its `days` map, which
- * already leaves out deleted occurrences), so nobody has to work dates out from the
- * rule's wording. A multi-day series stays one entry with `covered_days`: Cozi's map
- * lists every covered day, and splitting adjacent runs back into occurrences would be
- * guesswork. So does a series with no occurrence left in the month, so its id stays
- * reachable from this page.
+ * The month's entries for one appointment. A recurring series is listed once per
+ * occurrence, on the day each starts as Cozi itself expands it (its `days` map, which
+ * already leaves out deleted occurrences and, for a multi-day series, names the
+ * occurrence every covered day belongs to), so nobody has to work dates out from the
+ * rule's wording. Each occurrence spans as many days as the series' first one. A
+ * series with no day left in the month is not on the page at all (Cozi drops it;
+ * live-verified 2026-10-14), so the one-entry fallback only serves a page that came
+ * without a day map.
  */
 export function expandAppt(a: CoziAppointment): SlimAppointment[] {
   if (!isRecurring(a) || a.occurrenceDays.length === 0) return [slimAppt(a)];
-  if (coveredSpan(a) > 0) return [{ ...slimAppt(a), covered_days: [...a.occurrenceDays] }];
   return a.occurrenceDays.map((day) => ({ ...slimAppt({ ...a, startDay: day }), series_start: a.startDay }));
 }
 

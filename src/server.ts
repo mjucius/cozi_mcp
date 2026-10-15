@@ -41,6 +41,10 @@ const LOCKOUT_THRESHOLD = 5;
 const LOCKOUT_BASE_MS = 1_000;
 const LOCKOUT_CAP_MS = 15 * 60 * 1_000;
 const authFailures = new Map<string, { fails: number; lockedUntil: number }>();
+// One password login at a time per credentials: tool calls made in parallel on an
+// empty or stale cache would otherwise each log in, and each failure would count
+// towards the lockout below.
+const logins = new Map<string, Promise<CoziClient>>();
 
 export async function getClient(username: string, password: string): Promise<CoziClient> {
   if (!username || !password) {
@@ -49,7 +53,11 @@ export async function getClient(username: string, password: string): Promise<Coz
   const key = cacheKey(username, password);
 
   // VULN-004: cache hits are re-validated once the token nears expiry so a
-  // rotated/revoked password stops working instead of living forever.
+  // rotated/revoked password stops working instead of living forever. This fires
+  // at 90% of the token's life, before the client's own cookie refresh (60 s
+  // before expiry) would, and on purpose: a refresh cookie outlives a changed
+  // password, so through this server a token is only ever renewed by a password
+  // login. The cookie refresh still serves a 401 in the middle of a session.
   const entry = clients.get(key);
   if (entry) {
     const life = entry.client.tokenLifetimeMs;
@@ -58,6 +66,15 @@ export async function getClient(username: string, password: string): Promise<Coz
     clients.delete(key);
   }
 
+  let login = logins.get(key);
+  if (!login) {
+    login = freshClient(username, password, key).finally(() => logins.delete(key));
+    logins.set(key, login);
+  }
+  return login;
+}
+
+async function freshClient(username: string, password: string, key: string): Promise<CoziClient> {
   const failure = authFailures.get(username);
   if (failure && Date.now() < failure.lockedUntil) {
     const retryInSeconds = Math.ceil((failure.lockedUntil - Date.now()) / 1000);
@@ -102,6 +119,7 @@ export async function getClient(username: string, password: string): Promise<Coz
 
 export function _resetClientCache(): void {
   clients.clear();
+  logins.clear();
   authFailures.clear();
 }
 

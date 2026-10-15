@@ -429,6 +429,56 @@ describe('delete_appointment', () => {
     expect(m.deleteAppointment).toHaveBeenCalledWith('series_1', 2026, 5, undefined, undefined);
   });
 
+  // A multi-day series: get_calendar lists each occurrence on its first day (Cozi's
+  // day map names it for every covered day), and only that day names the occurrence.
+  const trip = (days: string[]): CoziAppointment =>
+    makeAppointment({
+      id: 'trip_1',
+      subject: 'Cabin weekend',
+      startDay: '2026-05-05',
+      startTime: { h: 18, m: 0 },
+      endTime: { h: 12, m: 0 },
+      dateSpan: 1,
+      recurrence: { text: ['Every week on Tuesday'] },
+      occurrenceDays: days,
+    });
+
+  it('a multi-day occurrence is named by its first day; a day inside it is refused and nothing is sent', async () => {
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValueOnce([trip(['2026-05-05', '2026-05-12'])]);
+    await expect(
+      deleteAppointmentHandler(asClient(m), 'trip_1', 2026, 5, { scope: 'this', occurrenceDay: '2026-05-13' }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(m.deleteAppointment).not.toHaveBeenCalled();
+
+    m.getCalendar.mockResolvedValueOnce([trip(['2026-05-05', '2026-05-12'])]).mockResolvedValueOnce([trip(['2026-05-05'])]);
+    m.deleteAppointment.mockResolvedValue(true);
+    expect(
+      await deleteAppointmentHandler(asClient(m), 'trip_1', 2026, 5, { scope: 'this', occurrenceDay: '2026-05-12' }),
+    ).toBe(true);
+    expect(m.deleteAppointment).toHaveBeenCalledWith('trip_1', 2026, 5, { day: '2026-05-12', extent: 'day' }, undefined);
+  });
+
+  it('a series Cozi dropped from the page after the delete counts as applied', async () => {
+    // Its only occurrence that month is gone, so Cozi no longer lists it there.
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValueOnce([trip(['2026-05-12'])]).mockResolvedValueOnce([]);
+    m.deleteAppointment.mockResolvedValue(true);
+    expect(
+      await deleteAppointmentHandler(asClient(m), 'trip_1', 2026, 5, { scope: 'this', occurrenceDay: '2026-05-12' }),
+    ).toBe(true);
+  });
+
+  it('a series that vanished although other occurrences remained this month is a failed delete', async () => {
+    // Cozi drops a series from a page only once none of its days is left there.
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValueOnce([trip(['2026-05-05', '2026-05-12'])]).mockResolvedValueOnce([]);
+    m.deleteAppointment.mockResolvedValue(true);
+    await expect(
+      deleteAppointmentHandler(asClient(m), 'trip_1', 2026, 5, { scope: 'this', occurrenceDay: '2026-05-12' }),
+    ).rejects.toBeInstanceOf(WriteVerificationError);
+  });
+
   it('refuses holidays, subscribed calendars, birthdays and a scope on a one-off', async () => {
     const cases: Array<[CoziAppointment, Parameters<typeof deleteAppointmentHandler>[4]]> = [
       [makeAppointment({ id: 'x', readOnly: true }), {}],
@@ -515,6 +565,30 @@ describe('update_appointment on a recurring series', () => {
     expect(sent.startDay).toBe('2026-05-09');
     expect(opts.occurrence).toEqual({ day: '2026-05-08', extent: 'day' });
     expect(out.id).toBe('standin');
+  });
+
+  it("on a multi-day series, scope 'this' starts the copy on the occurrence's first day", async () => {
+    const trip = makeAppointment({
+      id: 'trip_1',
+      startDay: '2026-05-05',
+      startTime: { h: 18, m: 0 },
+      endTime: { h: 12, m: 0 },
+      dateSpan: 1,
+      recurrence: { rules: [{ frequency: 'Weekly', interval: 1, byDay: ['TU'], end: {} }] },
+      occurrenceDays: ['2026-05-05', '2026-05-12'],
+    });
+    const m = makeMockClient();
+    m.getCalendar.mockResolvedValue([trip]);
+    m.updateAppointment.mockImplementation(async (a: CoziAppointment) => ({ ...a, id: 'standin', recurrence: null }));
+    const out = await updateAppointmentHandler(asClient(m), 'trip_1', 2026, 5, {
+      scope: 'this',
+      occurrenceDay: '2026-05-12',
+      notes: 'x',
+    });
+    const [sent, opts] = m.updateAppointment.mock.calls[0] as [CoziAppointment, { occurrence?: unknown }];
+    expect([sent.startDay, sent.dateSpan]).toEqual(['2026-05-12', 1]);
+    expect(opts.occurrence).toEqual({ day: '2026-05-12', extent: 'day' });
+    expect([out.day, out.end_day]).toEqual(['2026-05-12', '2026-05-13']);
   });
 
   it('refuses `repeat` on a single occurrence', async () => {
