@@ -106,6 +106,20 @@ describe('the changed copy of an occurrence edit', () => {
     expect((await edit({ day: '2026-05-12', extent: 'forward' })).id).toBe('split');
   });
 
+  it('finds a this-and-following copy that ends at midnight, which Cozi returns as 00:00:00 (read as null)', async () => {
+    stubPages({
+      '2026-5': [
+        item('ser', '2026-05-05', weekly()),
+        item('split', '2026-05-12', { ...weekly(), endTime: '00:00:00' }),
+      ],
+    });
+    const midnight = { ...series(), startDay: '2026-05-12', endTime: { h: 0, m: 0 } };
+    const out = await new CoziClient('u', 'p').updateAppointment(midnight, {
+      occurrence: { day: '2026-05-12', extent: 'forward' },
+    });
+    expect(out.id).toBe('split');
+  });
+
   it('is a WriteVerificationError when nothing matches', async () => {
     stubPages({ '2026-5': [item('ser', '2026-05-05', weekly())] });
     await expect(edit({ day: '2026-05-12', extent: 'day' })).rejects.toBeInstanceOf(WriteVerificationError);

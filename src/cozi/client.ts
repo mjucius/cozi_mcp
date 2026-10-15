@@ -692,5 +692,9 @@ const yearMonth = (day: string): [number, number] => {
   return [Number(y), Number(m)];
 };
 
-const sameTime = (a: TimeOfDay | null, b: TimeOfDay | null): boolean =>
-  a == null ? b == null : b != null && a.h === b.h && a.m === b.m;
+// Cozi stores midnight as 00:00:00, which parseTimeFromCalendar reads back as null, so
+// a missing time and midnight are the same time here.
+const sameTime = (a: TimeOfDay | null, b: TimeOfDay | null): boolean => {
+  const [x, y] = [a ?? { h: 0, m: 0 }, b ?? { h: 0, m: 0 }];
+  return x.h === y.h && x.m === y.m;
+};
