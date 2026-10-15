@@ -648,7 +648,11 @@ export class CoziClient {
         (e): e is { date: string; standinApptId: string } =>
           isObj(e) && typeof e.date === 'string' && e.date.startsWith(occ.day) && typeof e.standinApptId === 'string',
       )?.standinApptId;
-      candidates = standin ? home.filter((a) => a.id === standin) : home.filter((a) => looksLike(a) && !isRecurring(a));
+      // A series that is listed but names no stand-in has no copy to find; only a series
+      // Cozi has dropped from the page leaves the look-alike match to go on.
+      if (standin) candidates = home.filter((a) => a.id === standin);
+      else if (series) candidates = [];
+      else candidates = home.filter((a) => looksLike(a) && !isRecurring(a));
     } else {
       candidates = home.filter((a) => looksLike(a) && isRecurring(a));
     }

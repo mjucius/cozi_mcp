@@ -72,6 +72,24 @@ describe('VULN-004: credential cache TTL / re-validation', () => {
     expect(constructed.length).toBe(2);
   });
 
+  it('parallel calls with a bad password are one failed login, not one each, so no lockout is reached', async () => {
+    const constructed: FakeClient[] = [];
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+      const c = new FakeClient(u, p);
+      c.authenticate = vi.fn(async () => {
+        throw new AuthenticationError('bad password', 401, {});
+      });
+      constructed.push(c);
+      return c;
+    }) as unknown as typeof clientModule.CoziClient);
+    const settled = await Promise.allSettled(Array.from({ length: 5 }, () => getClient('alice', 'bad')));
+    expect(settled.every((r) => r.status === 'rejected')).toBe(true);
+    expect(constructed.length).toBe(1);
+    // Five counted failures would lock the account out here; one does not.
+    await expect(getClient('alice', 'bad')).rejects.toBeInstanceOf(AuthenticationError);
+    expect(constructed.length).toBe(2);
+  });
+
   it('does not expire before the safety-margined threshold', async () => {
     const constructed = spyConstruct();
     const c1 = await getClient('alice', 'pw');

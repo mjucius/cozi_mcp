@@ -82,6 +82,15 @@ describe('the changed copy of an occurrence edit', () => {
     expect((await edit({ day: '2026-05-12', extent: 'day' })).id).toBe('standin');
   });
 
+  it('is an error, not a look-alike one-off, when the series is listed but its exdate names no stand-in yet', async () => {
+    // The series is on the page, so the stand-in must come from its exdate; a one-off
+    // that merely matches the sent copy is somebody else's appointment.
+    stubPages({
+      '2026-5': [item('ser', '2026-05-05', weekly()), item('oneoff', '2026-05-12')],
+    });
+    await expect(edit({ day: '2026-05-12', extent: 'day' })).rejects.toBeInstanceOf(WriteVerificationError);
+  });
+
   it("reads the occurrence's own page for the exdate when the copy was moved to another month", async () => {
     stubPages({
       '2026-5': [item('ser', '2026-05-05', weekly([{ date: '2026-05-12T09:00:00', standinApptId: 'standin' }]))],
@@ -133,5 +142,24 @@ describe('the day map of a month page', () => {
     expect(page.find((a) => a.id === 'ser')?.occurrenceDays).toEqual(['2026-04-30', '2026-05-07']);
     expect(page.find((a) => a.id === 'one')?.occurrenceDays).toEqual(['2026-05-20']);
     expect(page.find((a) => a.id === 'odd')?.occurrenceDays).toEqual(['2026-05-21']);
+  });
+
+  it('keeps back-to-back occurrences apart: a day two of them cover is listed by both starts', async () => {
+    // A daily two-day series: Jan 8–9, Jan 9–10, … each covered day names its occurrence.
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith('/auth/login')) return json(LOGIN);
+      const occ = (start: string, end: string) => ({ id: 'run', multiday: { startDay: start, endDay: end } });
+      return json({
+        items: { run: item('run', '2026-01-08', weekly()) },
+        days: {
+          '2026-01-08': [occ('2026-01-08', '2026-01-09')],
+          '2026-01-09': [occ('2026-01-08', '2026-01-09'), occ('2026-01-09', '2026-01-10')],
+          '2026-01-10': [occ('2026-01-09', '2026-01-10')],
+        },
+      });
+    });
+    const page = await new CoziClient('u', 'p').getCalendar(2026, 1);
+    expect(page.find((a) => a.id === 'run')?.occurrenceDays).toEqual(['2026-01-08', '2026-01-09']);
   });
 });

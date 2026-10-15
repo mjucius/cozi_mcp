@@ -85,6 +85,33 @@ describe('apikey and token refresh', () => {
     expect(logins(calls)).toBe(1);
   });
 
+  it('a 401 that arrives after the token was renewed replays with it, without a second reauth', async () => {
+    // The second request was sent with the old token; its 401 only comes back once the
+    // first request's reauth has been accepted, so it must replay, not reauth again.
+    let renewed!: () => void;
+    const tokenRenewed = new Promise<void>((r) => (renewed = r));
+    let rejected = 0;
+    const calls: URL[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      calls.push(url);
+      if (url.pathname.endsWith('/auth/login')) return json(200, LOGIN, { 'set-cookie': 'cozi_refresh=r1; HttpOnly' });
+      if (url.pathname.endsWith('/auth/reauth')) {
+        renewed();
+        return json(200, { ...LOGIN, accessToken: 'tok2' });
+      }
+      if (new Headers(init?.headers).get('authorization') !== 'Bearer tok1') return json(200, []);
+      if (rejected++ === 0) return json(401, {});
+      await tokenRenewed;
+      await new Promise((r) => setTimeout(r, 50)); // let the reauth's token be accepted
+      return json(401, {});
+    });
+    const client = new CoziClient('u', 'p');
+    await Promise.all([client.getFamilyMembers(), client.getLists()]);
+    expect(reauths(calls)).toBe(1);
+    expect(logins(calls)).toBe(1);
+  });
+
   it('concurrent 401s share one reauth, and a request that raced it replays with the new token', async () => {
     const calls = stubCozi((url, _n, init) => {
       const auth = new Headers(init?.headers).get('authorization');
