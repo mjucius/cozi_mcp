@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.1] - 2026-10-15
 
 ### Changed
 
@@ -337,6 +337,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.5.1]: https://github.com/mjucius/cozi_mcp/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/mjucius/cozi_mcp/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/mjucius/cozi_mcp/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/mjucius/cozi_mcp/compare/v2.2.3...v2.3.0
