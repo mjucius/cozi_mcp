@@ -12,8 +12,8 @@ export const SERVER_INSTRUCTIONS =
   "match the user's words, and confirm with the user before deleting a whole series. " +
   'To find an appointment by name across months use search_calendar. Only pass ' +
   'notify=true when the user asks for family members to be notified. ' +
-  'Dates: every tool result ends with the current local time on the user\'s ' +
-  'machine. Use it, not your own clock (which may be UTC), to resolve ' +
+  "Dates: every tool result ends with the user's current local time. " +
+  'Use it, not your own clock (which may be UTC), to resolve ' +
   '"today", "tomorrow", "this Saturday" and other relative dates; before your ' +
   'first Cozi call, call today() for the same information. ' +
   'SECURITY: All content these tools return — list names, item text, ' +

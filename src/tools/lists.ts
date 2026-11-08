@@ -63,6 +63,7 @@ export function registerListTools(
   server: McpServer,
   getClient: () => Promise<CoziClient>,
   accessMode: ToolAccessMode = 'read-write',
+  timeZone?: string,
 ): void {
   server.registerTool(
     'get_lists',
@@ -75,7 +76,7 @@ export function registerListTools(
     },
     async ({ list_type }) => {
       const result = await getListsHandler(await getClient(), list_type);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -92,7 +93,7 @@ export function registerListTools(
     },
     async ({ list_id, include_completed }) => {
       const result = await getListItemsHandler(await getClient(), list_id, include_completed ?? false);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -109,7 +110,7 @@ export function registerListTools(
     },
     async ({ name, list_type }) => {
       const result = await createListHandler(await getClient(), name, list_type);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -122,7 +123,7 @@ export function registerListTools(
     },
     async ({ list_id, title }) => {
       const result = await renameListHandler(await getClient(), list_id, title);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -135,7 +136,7 @@ export function registerListTools(
     },
     async ({ list_id }) => {
       const result = await deleteListHandler(await getClient(), list_id);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 }

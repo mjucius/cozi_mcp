@@ -11,6 +11,7 @@ export async function familyMembersHandler(client: CoziClient): Promise<SlimPers
 export function registerFamilyMembersTool(
   server: McpServer,
   getClient: () => Promise<CoziClient>,
+  timeZone?: string,
 ): void {
   server.registerTool(
     'family_members',
@@ -22,7 +23,7 @@ export function registerFamilyMembersTool(
     },
     async () => {
       const result = await familyMembersHandler(await getClient());
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 }

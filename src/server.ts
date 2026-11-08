@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { jsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/types.js';
 import { z } from 'zod';
 import { AuthenticationError, CoziClient } from './cozi/index.js';
 import { SERVER_INSTRUCTIONS } from './instructions.js';
@@ -8,6 +9,7 @@ export const configSchema = z.object({
   username: z.string().describe('Cozi account username/email'),
   password: z.string().describe('Cozi account password'),
   readOnly: z.boolean().optional().describe('Expose read-only MCP tools and hide write tools'),
+  timeZone: z.string().optional().describe("IANA zone for the local-time stamp; defaults to this machine's"),
 });
 export type Config = z.infer<typeof configSchema>;
 
@@ -123,15 +125,33 @@ export function _resetClientCache(): void {
   authFailures.clear();
 }
 
-export default function createServer({ config }: { config: Config }): McpServer {
+/**
+ * The SDK otherwise builds an Ajv validator for every server (~4 ms of CPU the first time,
+ * ~0.3 ms after), only ever used to check replies to elicitation requests. This server
+ * never elicits, and the Worker builds a server per request against a 10 ms CPU budget.
+ * It refuses rather than waves through, should elicitation ever be added.
+ */
+const noElicitation: jsonSchemaValidator = {
+  getValidator: () => () => ({ valid: false, data: undefined, errorMessage: 'cozi-mcp does not use elicitation' }),
+};
+
+/**
+ * `getClient` defaults to the per-credentials cache above. The remote Worker passes its
+ * own: module-level promises shared across Worker requests can hang once the request
+ * that created them ends, so it builds one client per request instead.
+ */
+export default function createServer({
+  config,
+  getClient: clientFor = () => getClient(config.username, config.password),
+}: {
+  config: Config;
+  getClient?: () => Promise<CoziClient>;
+}): McpServer {
   const server = new McpServer(
     { name: 'cozi-mcp', version: SERVER_VERSION },
-    { instructions: SERVER_INSTRUCTIONS },
+    // GHSA-46jr-4wx8-v453: bounds the work one tools/call can make validation do.
+    { instructions: SERVER_INSTRUCTIONS, maxToolInputElements: 10_000, jsonSchemaValidator: noElicitation },
   );
-  registerCoziTools(
-    server,
-    () => getClient(config.username, config.password),
-    config.readOnly === true ? 'read-only' : 'read-write',
-  );
+  registerCoziTools(server, clientFor, config.readOnly === true ? 'read-only' : 'read-write', config.timeZone);
   return server;
 }

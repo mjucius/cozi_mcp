@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Set up Cozi for Claude</title>
+<style>
+  :root { --ink: #1f2328; --muted: #59636e; --line: #d1d9e0; --soft: #f6f8fa; --blue: #0969da; --btn: #1a56db; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 17px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  h1 { font-size: 1.75rem; line-height: 1.25; margin: .5rem 0 1rem; }
+  h2 { font-size: 1.4rem; line-height: 1.3; margin: 0 0 .75rem; }
+  h2:focus { outline: none; }
+  a { color: var(--blue); }
+  img { display: block; max-width: 100%; height: auto; margin: 1rem 0; border: 1px solid var(--line); border-radius: 8px; }
+  code { font: .9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--soft); padding: .1em .3em; border-radius: 4px; overflow-wrap: anywhere; }
+  pre { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 1rem; overflow-x: auto; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; margin: 1rem 0; }
+  th, td { border: 1px solid var(--line); padding: .45rem .6rem; text-align: left; vertical-align: top; }
+  th { background: var(--soft); }
+  .step { padding: 1.25rem 0; border-top: 1px solid var(--line); }
+  .count { color: var(--muted); font-size: .9rem; margin: 0 0 .25rem; }
+  .choices { display: grid; gap: .75rem; margin: 1rem 0; }
+  .choice { display: block; text-align: left; width: 100%; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); font: inherit; text-decoration: none; cursor: pointer; }
+  .choice:hover { border-color: var(--blue); }
+  .choice b { display: block; color: var(--blue); margin-bottom: .2rem; }
+  .deploy { display: inline-block; padding: .65rem 1.2rem; background: #f38020; color: #fff; border-radius: 6px; text-decoration: none; font-weight: 600; }
+  .note { background: var(--soft); border-left: 4px solid var(--line); padding: .6rem .9rem; margin: 1rem 0; }
+  .nav { display: none; }
+  .js .step { display: none; border-top: 0; }
+  .js .step.on { display: block; }
+  .js .nav { display: flex; gap: .75rem; justify-content: space-between; align-items: center; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  .nav button, .copy { font: inherit; padding: .55rem 1.1rem; border-radius: 6px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  .nav .next { background: var(--btn); border-color: var(--btn); color: #fff; margin-left: auto; }
+  .nav button[hidden] { display: none; }
+  .js .nav.off { display: none; }
+  .bar { height: 4px; background: var(--soft); border-radius: 2px; margin: 0 0 1rem; display: none; }
+  .js .bar.on { display: block; }
+  .bar span { display: block; height: 100%; background: var(--btn); border-radius: 2px; width: 0; transition: width .2s; }
+  footer { max-width: 46rem; margin: 0 auto; padding: 1rem 1rem 2rem; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+<div class="bar" id="bar"><span></span></div>
+
+<section class="step" id="start">
+  <h1 tabindex="-1">Set up your own Cozi connector for Claude</h1>
+  <p>This guide sets up a small server that lets Claude read and update your Cozi lists and calendar. You need it if you use Claude on the web, in the phone apps or through an agent, because those can only reach a server on the internet. It works in Claude Desktop too, so one setup covers every place you use Claude. If you only use Claude Desktop, the <a href="https://github.com/mjucius/cozi_mcp#1-mcpb-recommended-for-claude-desktop">MCPB install</a> is simpler.</p>
+  <p>Your server runs in your own free Cloudflare account, which you own and are responsible for. This project doesn't host it and has no access to your account. You don't need a terminal, a domain or a credit card, and only your Cozi account can sign in to it.</p>
+  <p class="note">This is an unofficial, open-source project. Cozi doesn't make, recognize or endorse it, and neither does Cloudflare. You can run it free on other hosts too. This guide uses Cloudflare because it's relatively simple to set up.</p>
+  <p>This works with Claude only. ChatGPT lets custom connectors change data only on its Business, Enterprise and Edu plans.</p>
+  <h2>Choose how to install</h2>
+  <div class="choices">
+    <a class="choice" href="#needs"><b>Click through it yourself</b>You only need a web browser, plus free Cloudflare and GitHub accounts.</a>
+    <a class="choice" href="#ai"><b>Have an AI assistant do it</b>You need an assistant that can run commands on your computer, such as Claude Code or Codex. There's no GitHub account and no copy of the setup files. A regular Claude or ChatGPT chat can't do this.</a>
+  </div>
+</section>
+
+<section class="step" id="needs" data-n="0">
+  <h2 tabindex="-1">What you'll need</h2>
+  <ul>
+    <li><b>A free <a href="https://dash.cloudflare.com/sign-up">Cloudflare account</a>.</b> It runs your server. If you can, use one that runs nothing else, because the update token in step 5 can change any Worker in the account.</li>
+    <li><b>A free <a href="https://github.com/signup">GitHub account</a>.</b> Cloudflare copies the setup into a new repository there and builds your server from it.</li>
+    <li><b>Two-factor sign-in</b> turned on for both accounts.</li>
+    <li><b>Your Cozi email and password.</b> Your server stores the password encrypted, so a password you don't use anywhere else is a good idea.</li>
+  </ul>
+  <p>The red boxes in the pictures show what to click or fill in. Names like <code>your-subdomain</code> stand in for your own.</p>
+</section>
+
+<section class="step" id="s1" data-n="1">
+  <h2 tabindex="-1">Step 1: Start the deploy</h2>
+  <p><a class="deploy" href="https://deploy.workers.cloudflare.com/?url=https://github.com/mjucius/cozi_mcp/tree/main/deploy/cloudflare" target="_blank" rel="noopener">Deploy to Cloudflare</a></p>
+  <p>Click the button. It opens Cloudflare in a new tab, so you can keep this guide open. Sign in to Cloudflare. If your login has more than one Cloudflare account, choose the one you want to use. That account decides your server's address, and you'll need it again in step 5.</p>
+</section>
+
+<section class="step" id="s2" data-n="2">
+  <h2 tabindex="-1">Step 2: Connect GitHub</h2>
+  <img src="../images/cloudflare/01-github-connection.jpg" alt="The Git account list, with New GitHub connection marked" width="562" height="437">
+  <p>Open <b>Git account</b> and choose <b>New GitHub connection</b>. If your GitHub name is already listed, choose that instead.</p>
+  <p>If GitHub asks which repositories Cloudflare may use, choose <b>Only select repositories</b>. Cloudflare only needs the new one it's about to create.</p>
+  <p>Cloudflare's button can't build straight from the public <code>cozi_mcp</code> project. It always copies the setup files into a new repository in your own GitHub account and builds from that copy. The copy holds only those few files, and your server gets its updates from <code>cozi_mcp</code>'s releases, not from the copy.</p>
+</section>
+
+<section class="step" id="s3" data-n="3">
+  <h2 tabindex="-1">Step 3: Make the repository private</h2>
+  <img src="../images/cloudflare/02-private-repository.jpg" alt="The Create private Git repository box, ticked" width="562" height="437">
+  <ul>
+    <li><b>Tick Create private Git repository.</b> It starts unticked. Nothing secret goes in the repository, but nobody else needs to see it.</li>
+    <li><b>Leave Project name as <code>calendar-connector</code>.</b> It becomes part of your server's address. It only has to be unique inside your own GitHub and Cloudflare accounts, so it doesn't matter if other people use the same name. If you already have a repository or Worker called <code>calendar-connector</code>, choose another name and use it wherever this guide says <code>calendar-connector</code>. Leave "cozi" out of any name you choose, because Cloudflare's terms don't allow other companies' names in these addresses.</li>
+  </ul>
+</section>
+
+<section class="step" id="s4" data-n="4">
+  <h2 tabindex="-1">Step 4: Leave the storage as it is</h2>
+  <img src="../images/cloudflare/03-storage.jpg" alt="The KV namespace set to Create new" width="562" height="437">
+  <p>Leave <b>Create new</b> selected and the name as <code>calendar-connector</code>. This is where your server keeps Claude's sign-in sessions, encrypted.</p>
+</section>
+
+<section class="step" id="s5" data-n="5">
+  <h2 tabindex="-1">Step 5: Enter your email and the update token</h2>
+  <img src="../images/cloudflare/04-email-and-token.jpg" alt="The ALLOWED_EMAIL and CF_API_TOKEN fields" width="562" height="437">
+  <p><b><code>ALLOWED_EMAIL</code>:</b> type the email you sign in to Cozi with. Your server turns away any other email before it contacts Cozi.</p>
+  <p><b><code>CF_API_TOKEN</code>:</b> this lets your server install updates by itself. It's a Cloudflare token, not a GitHub one. Your server reads new releases from GitHub without any account. It needs the token for the last step, because only Cloudflare can change the code a server runs, and it needs your permission to replace its own.</p>
+  <p>To create the token:</p>
+  <ol>
+    <li>Click <b>Create the token</b>. It opens in a new tab. If Cloudflare asks which account, choose the same one as in step 1.</li>
+    <li>The name and permission are already filled in, so don't change anything. Scroll to the bottom and click <b>Review token</b>.
+      <img src="../images/cloudflare/06-review-token.jpg" alt="The bottom of the token form, with Review token marked" width="1100" height="427" loading="lazy"></li>
+    <li>Click <b>Create token</b>.
+      <img src="../images/cloudflare/07-create-token.jpg" alt="The token summary, with Create token marked" width="1100" height="708" loading="lazy"></li>
+    <li>Copy the token, because Cloudflare only shows it once. Paste it into <code>CF_API_TOKEN</code>.</li>
+  </ol>
+  <p>To skip automatic updates, type <code>off</code> instead. Your server works the same, but it stays on this version until you <a href="https://github.com/mjucius/cozi_mcp/blob/main/docs/cloudflare-setup.md#automatic-updates">add a token</a>.</p>
+</section>
+
+<section class="step" id="s6" data-n="6">
+  <h2 tabindex="-1">Step 6: Click Deploy</h2>
+  <img src="../images/cloudflare/05-deploy.jpg" alt="The bottom of the form, with Enable Preview builds turned off and Deploy marked" width="562" height="437">
+  <p>Turn off <b>Enable Preview builds</b>, then leave everything else as it is:</p>
+  <table>
+    <tr><th>Setting</th><th>Leave it</th><th>Why</th></tr>
+    <tr><td><b>Build command</b></td><td>Empty</td><td>There's nothing to build first.</td></tr>
+    <tr><td><b>Deploy command</b> and <b>Preview command</b></td><td>As filled in</td><td>Cloudflare's defaults are correct.</td></tr>
+    <tr><td><b>Enable Preview builds</b></td><td>Turn off</td><td>It would build a separate public copy of your server whenever something changes another branch of the repository. You don't need one.</td></tr>
+    <tr><td><b>Protect with Cloudflare Access</b></td><td>Off</td><td>It would block Claude from reaching your server.</td></tr>
+    <tr><td><b>Advanced settings</b></td><td>Closed</td><td>Nothing in there is needed.</td></tr>
+  </table>
+  <p>Click <b>Deploy</b> and wait for the build to finish.</p>
+</section>
+
+<section class="step" id="s7" data-n="7">
+  <h2 tabindex="-1">Step 7: Open your server</h2>
+  <p>In Cloudflare, open <b>Workers &amp; Pages</b>, click <b>calendar-connector</b>, then click <b>Visit</b>.</p>
+  <img src="../images/cloudflare/08-worker-page.jpg" alt="The Worker page, with Visit marked" width="1100" height="199">
+  <p>Your server's address looks like <code>https://calendar-connector.your-subdomain.workers.dev</code>. Every Worker in a Cloudflare account shares the same subdomain, so yours may look unrelated to this project. That's normal.</p>
+  <p>This first visit also tells your server its own name, which it needs before it can update itself.</p>
+  <img src="../images/cloudflare/09-server-page.jpg" alt="Your server's page, with Add to Claude marked" width="550" height="392" loading="lazy">
+</section>
+
+<section class="step" id="s8" data-n="8">
+  <h2 tabindex="-1">Step 8: Add it to Claude</h2>
+  <ol>
+    <li>Click <b>Add to Claude</b> on your server's page, and sign in to Claude if asked.</li>
+    <li>Claude warns you because the link came from outside Claude. Check that the address is your server's, then click <b>Continue</b>.
+      <img src="../images/cloudflare/10-claude-add.jpg" alt="Claude's Add custom connector form, already filled in" width="536" height="478"></li>
+    <li>Leave the settings as they are. Claude has already detected the right ones: <b>Sign in now</b> sends you to your server's sign-in page, and <b>Use Claude's published identity</b> is the only kind of connection your server accepts.
+      <img src="../images/cloudflare/11-claude-settings.jpg" alt="Sign in now and Use Claude's published identity, both marked Detected" width="536" height="728" loading="lazy"></li>
+    <li>Scroll down and click <b>Add</b>.
+      <img src="../images/cloudflare/12-claude-add-button.jpg" alt="The bottom of the form, with Add marked" width="536" height="360" loading="lazy"></li>
+  </ol>
+</section>
+
+<section class="step" id="s9" data-n="9">
+  <h2 tabindex="-1">Step 9: Connect and sign in</h2>
+  <p>Click <b>Connect</b>. Your server's sign-in page opens. Enter your Cozi email and password, then click <b>Sign in and connect</b>.</p>
+  <img src="../images/cloudflare/13-sign-in.jpg" alt="Your server's sign-in page" width="550" height="465">
+  <p>You type the password on your own server, so Claude never sees it. Your server checks it with Cozi, then stores it encrypted so it can log in to Cozi again about once an hour while you use it.</p>
+</section>
+
+<section class="step" id="done" data-n="10">
+  <h2 tabindex="-1">You're done</h2>
+  <p>To try it, ask Claude "What's on my Cozi calendar today?" Claude asks before each tool call by default.</p>
+  <p>The connector works wherever you use that Claude account, including the phone apps. Claude's Free plan allows one custom connector.</p>
+  <p>The <a href="https://github.com/mjucius/cozi_mcp/blob/main/docs/cloudflare-setup.md">after-setup page</a> covers family members, read-only access, automatic updates, changing your settings, troubleshooting and removing everything.</p>
+</section>
+
+<section class="step" id="ai">
+  <h2 tabindex="-1">Have an AI assistant install it</h2>
+  <p>Paste this into Claude Code, Codex or a similar assistant that can run commands on your computer:</p>
+  <p><button class="copy" id="copy" type="button" hidden>Copy the instructions</button></p>
+  <pre id="prompt">Please install the Cozi connector on my Cloudflare account. It's a small server that lets Claude reach my Cozi calendar and lists: https://github.com/mjucius/cozi_mcp
+
+Run the commands yourself and tell me what you're doing in plain language, because I may not be technical. Stop and ask me if anything unexpected happens. Don't change anything else in my Cloudflare account.
+
+Never ask me to type my Cozi password or a token in this chat. I enter those on my own server's page and in Cloudflare's dashboard.
+
+Run every command below from the folder in step 3, with CLOUDFLARE_ACCOUNT_ID on the same line once step 5 sets it, because settings may not carry between commands. On Windows, use the PowerShell equivalents.
+
+1. Ask whether I have a Cloudflare account. If not, have me create a free one at https://dash.cloudflare.com/sign-up, then continue.
+2. Check that Node.js 20 or newer is installed. If it isn't, help me install it.
+3. Make a new temporary folder, go into it, and download the setup files:
+   curl -sL https://codeload.github.com/mjucius/cozi_mcp/tar.gz/refs/heads/main | tar xz --strip-components=3 cozi_mcp-main/deploy/cloudflare
+   Then run: npm install
+4. Run: npx wrangler whoami
+   If I'm already logged in, ask whether to use that login. If so, skip the login here and the logout in step 11.
+   Otherwise run: npx wrangler login
+   Tell me to approve it in the browser window that opens.
+5. If more than one account is listed, ask me which one to use, and set CLOUDFLARE_ACCOUNT_ID to that account's ID.
+6. Run: npx wrangler deployments list --name calendar-connector
+   An error saying "This Worker does not exist on your account" [code: 10007] is the good result: the name is free. If a Worker with that name exists, don't overwrite it. Ask me for a different name without "cozi" in it, change the top "name" in wrangler.jsonc (currently "calendar-connector") to it, and run this same check for the new name. For any other error, stop and ask me.
+7. Ask me for the email I sign in to Cozi with. Then run: npx wrangler deploy
+   This also creates one small storage space, which is expected. If it says it can't register a workers.dev subdomain, ask me what name I'd like, have me register it at the link it printed, and run the deploy again. If it registered a subdomain on its own, tell me the name. Note the server address it prints.
+8. Set the two settings, using my email from step 7:
+   printf '%s' "MY_EMAIL" | npx wrangler secret put ALLOWED_EMAIL
+   printf 'off' | npx wrangler secret put CF_API_TOKEN
+9. Run: curl -s -o /dev/null -w '%{http_code}\n' SERVER_ADDRESS
+   It should print 200, and the visit lets the server learn its own name. If it doesn't, wait a few seconds and try once more, then stop and ask me.
+10. Help me turn on automatic updates, unless I say to skip them. Tell me which Cloudflare account I'm using, then:
+    - Tell me to open https://dash.cloudflare.com/?to=/:account/api-tokens&amp;permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&amp;name=calendar-connector%20updater and choose that account if asked, leave the form as it is, scroll down, click Review token, then Create token, and copy the token.
+    - Tell me to open Workers &amp; Pages, then my Worker, then Settings in Cloudflare, click the pencil next to CF_API_TOKEN, click Rotate, paste the token, and click Deploy.
+11. Run: npx wrangler logout
+    Then delete the temporary folder.
+12. Tell me my server's address, and that my last step is to open it and follow the steps on that page, signing in with my Cozi email and password.</pre>
+  <p>You'll still need to do a few things yourself:</p>
+  <ol>
+    <li>Approve Cloudflare's sign-in in your browser.</li>
+    <li>Tell the assistant which Cloudflare account to use, if you have more than one, and your Cozi email.</li>
+    <li>Create the update token and paste it into your server's settings in Cloudflare, unless you skip updates. Don't paste it into the chat.</li>
+    <li>Open your server's page, click <b>Add to Claude</b>, <b>Continue</b>, <b>Add</b> and <b>Connect</b>, and sign in with Cozi. Steps <a href="#s8">8</a> and <a href="#s9">9</a> of the click-through path show those screens.</li>
+  </ol>
+  <p class="note">While it works, the assistant has access to your whole Cloudflare account, so read what it plans to do before you approve it. The assistant logs out of Cloudflare when it's done.</p>
+  <p>Your server works the same as one set up with the button. The <a href="https://github.com/mjucius/cozi_mcp/blob/main/docs/cloudflare-setup.md">after-setup page</a> covers what comes next.</p>
+</section>
+
+<nav class="nav" aria-label="Steps">
+  <button type="button" id="back">Back</button>
+  <button type="button" class="next" id="next">Next</button>
+</nav>
+</main>
+
+<footer>
+  An unofficial, open-source project, not made or endorsed by Cozi or Cloudflare. <a href="https://github.com/mjucius/cozi_mcp">Source code</a>. This page loads nothing from other sites, and the only thing it saves is which step you were on, in your own browser.
+</footer>
+
+<script>
+(() => {
+  // One step per screen. Without JavaScript the whole guide shows as one page.
+  const order = ['start', 'needs', 's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 'done'];
+  const steps = [...document.querySelectorAll('.step')];
+  const back = document.getElementById('back');
+  const next = document.getElementById('next');
+  const bar = document.getElementById('bar');
+  const nav = document.querySelector('.nav');
+  document.documentElement.classList.add('js');
+
+  const show = (id, focus) => {
+    const step = document.getElementById(id) || document.getElementById('start');
+    steps.forEach((s) => s.classList.toggle('on', s === step));
+    const i = order.indexOf(step.id);
+    const n = Number(step.dataset.n);
+    bar.classList.toggle('on', n > 0);
+    bar.firstElementChild.style.width = n > 0 ? `${Math.min(n, 9) / 9 * 100}%` : '0';
+    back.hidden = step.id === 'start';
+    next.hidden = step.id === 'start' || step.id === 'done' || step.id === 'ai';
+    next.textContent = step.id === 'needs' ? 'Start' : 'Next';
+    nav.classList.toggle('off', back.hidden && next.hidden);
+    const count = step.querySelector('.count');
+    if (n >= 1 && n <= 9 && !count) step.insertAdjacentHTML('afterbegin', `<p class="count">Step ${n} of 9</p>`);
+    document.title = step.id === 'start' ? 'Set up Cozi for Claude' : `${step.querySelector('h2').textContent} · Set up Cozi for Claude`;
+    window.scrollTo(0, 0);
+    if (focus) step.querySelector('h1, h2').focus();
+    try { localStorage.setItem('cozi-setup-step', step.id); } catch {}
+  };
+
+  const go = (id) => { if (location.hash !== `#${id}`) location.hash = id; else show(id, true); };
+  back.onclick = () => {
+    const id = document.querySelector('.step.on').id;
+    go(id === 'ai' ? 'start' : order[Math.max(0, order.indexOf(id) - 1)]);
+  };
+  next.onclick = () => go(order[order.indexOf(document.querySelector('.step.on').id) + 1]);
+  addEventListener('hashchange', () => show(location.hash.slice(1), true));
+
+  let saved = null;
+  try { saved = localStorage.getItem('cozi-setup-step'); } catch {}
+  show(location.hash.slice(1) || saved || 'start', false);
+
+  const copy = document.getElementById('copy');
+  copy.hidden = false;
+  copy.onclick = async () => {
+    const text = document.getElementById('prompt').textContent;
+    try { await navigator.clipboard.writeText(text); copy.textContent = 'Copied'; }
+    catch { getSelection().selectAllChildren(document.getElementById('prompt')); copy.textContent = 'Press Ctrl+C or Cmd+C to copy'; }
+    setTimeout(() => { copy.textContent = 'Copy the instructions'; }, 3000);
+  };
+})();
+</script>
+</body>
+</html>

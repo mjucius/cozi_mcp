@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { SERVER_VERSION } from '../src/server.js';
+import { UPDATE_KEYS } from '../src/update-keys.js';
 
 // The version is stated in three places that ship independently: package.json
 // (npx), manifest.json (MCPB), and the MCP handshake the client actually reads.
@@ -20,5 +21,11 @@ describe('version consistency', () => {
 
   it('SERVER_VERSION is a plain semver triple', () => {
     expect(SERVER_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  // A remote Worker verifies updates only with keys its own release shipped: one released
+  // without any could never update itself again.
+  it('ships at least one self-update signing key', () => {
+    expect(Object.values(UPDATE_KEYS).filter((k) => /^[A-Za-z0-9+/]{43}=$/.test(k)).length).toBeGreaterThan(0);
   });
 });

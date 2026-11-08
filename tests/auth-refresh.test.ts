@@ -125,3 +125,31 @@ describe('apikey and token refresh', () => {
     expect(reauths(calls)).toBe(1);
   });
 });
+
+// The remote Worker builds one client per request from the token its sign-in props carry.
+describe('session seeding', () => {
+  it('a seeded client uses the carried token without logging in', async () => {
+    const calls = stubCozi((url, _n, init) => {
+      if (url.pathname.includes('/account/')) {
+        expect(new Headers(init?.headers).get('authorization')).toBe('Bearer seeded');
+      }
+      return undefined;
+    });
+    const session = { accessToken: 'seeded', accountId: 'acct_1', expiresIn: 14400, issuedAt: Date.now() };
+    await new CoziClient('u', 'p', session).getFamilyMembers();
+    expect(logins(calls)).toBe(0);
+  });
+
+  it('a session past its life logs in again before the first call', async () => {
+    const calls = stubCozi(() => undefined);
+    const session = { accessToken: 'old', accountId: 'acct_1', expiresIn: 3600, issuedAt: Date.now() - 4 * 3600_000 };
+    const client = new CoziClient('u', 'p', session);
+    await client.getFamilyMembers();
+    expect(logins(calls)).toBe(1);
+    expect(client.exportSession()).toMatchObject({ accessToken: 'tok1', accountId: 'acct_1', expiresIn: 3600 });
+  });
+
+  it('exportSession is null before any login', () => {
+    expect(new CoziClient('u', 'p').exportSession()).toBeNull();
+  });
+});

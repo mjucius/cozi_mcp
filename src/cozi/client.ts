@@ -12,7 +12,7 @@ import {
   ValidationError,
   WriteVerificationError,
 } from './errors.js';
-import { HttpClient, type HttpResponse } from './http.js';
+import { HttpClient } from './http.js';
 import {
   CoziAppointment,
   CoziAppointmentSchema,
@@ -45,6 +45,14 @@ interface AuthResponse {
   accessToken?: string;
   accountId?: string;
   expiresIn?: number;
+}
+
+/** A Cozi access token as the remote Worker carries it between requests (see `exportSession`). */
+export interface CoziSession {
+  accessToken: string;
+  accountId: string;
+  expiresIn: number | null;
+  issuedAt: number;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -133,9 +141,14 @@ export class CoziClient {
   private authInFlight: Promise<void> | null = null;
   private readonly http: HttpClient;
 
+  /**
+   * `session` starts the client with a token from an earlier login, so a fresh client
+   * makes no login of its own until that token nears expiry or Cozi rejects it.
+   */
   constructor(
     private readonly username: string,
     private readonly password: string,
+    session?: CoziSession,
   ) {
     this.http = new HttpClient({
       baseUrl: BASE_URL,
@@ -144,6 +157,25 @@ export class CoziClient {
       authHeader: () => (this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}),
       authGeneration: () => this.tokenGeneration,
     });
+    if (session) {
+      this.accessToken = session.accessToken;
+      this.accountId = session.accountId;
+      this.tokenExpiresIn = session.expiresIn;
+      this.tokenIssuedAtMs = session.issuedAt;
+      this.tokenGeneration = 1;
+      this.authenticated = true;
+    }
+  }
+
+  /** The current token, for `new CoziClient(username, password, session)` later; null before a login. */
+  exportSession(): CoziSession | null {
+    if (!this.authenticated || !this.accessToken || !this.accountId) return null;
+    return {
+      accessToken: this.accessToken,
+      accountId: this.accountId,
+      expiresIn: this.tokenExpiresIn,
+      issuedAt: this.tokenIssuedAtMs,
+    };
   }
 
   async authenticate(): Promise<void> {

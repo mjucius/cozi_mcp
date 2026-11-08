@@ -1,4 +1,5 @@
 export { CoziClient } from './client.js';
+export type { CoziSession } from './client.js';
 export {
   APIError,
   AuthenticationError,
