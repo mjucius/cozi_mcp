@@ -30,9 +30,10 @@ export async function getCalendarHandler(
 export async function searchCalendarHandler(
   client: CoziClient,
   query: string,
+  timeZone?: string,
 ): Promise<{ appointments: SlimSearchHit[]; more?: true }> {
   const { appointments, more } = await client.searchCalendar(query);
-  const today = localNow().date;
+  const today = localNow(new Date(), timeZone).date;
   const hits = appointments.map((a) => slimSearchHit(a, today)).sort((x, y) => x.day.localeCompare(y.day));
   return more ? { appointments: hits, more: true } : { appointments: hits };
 }
@@ -420,6 +421,7 @@ export function registerCalendarTools(
   server: McpServer,
   getClient: () => Promise<CoziClient>,
   accessMode: ToolAccessMode = 'read-write',
+  timeZone?: string,
 ): void {
   server.registerTool(
     'get_calendar',
@@ -443,7 +445,7 @@ export function registerCalendarTools(
     },
     async ({ year, month }) => {
       const result = await getCalendarHandler(await getClient(), year, month);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -461,7 +463,7 @@ export function registerCalendarTools(
         'first page, so narrow the query.',
       inputSchema: { query: z.string() },
     },
-    async ({ query }) => toolResult(await searchCalendarHandler(await getClient(), query)),
+    async ({ query }) => toolResult(await searchCalendarHandler(await getClient(), query, timeZone), timeZone),
   );
 
   server.registerTool(
@@ -469,12 +471,12 @@ export function registerCalendarTools(
     {
       title: "Today's date in the user's timezone",
       description:
-        "Current date, weekday and time on the user's machine. Returns: {date, weekday, time, timezone}. " +
+        "Current date, weekday and time in the user's time zone. Returns: {date, weekday, time, timezone}. " +
         "Call it before turning 'tomorrow' or 'this Saturday' into the ISO dates the calendar tools take " +
         'when you have not called another Cozi tool yet; every Cozi tool result also carries this time.',
       inputSchema: {},
     },
-    async () => toolResult(localNow()),
+    async () => toolResult(localNow(new Date(), timeZone), timeZone),
   );
 
   if (accessMode === 'read-only') {
@@ -519,7 +521,7 @@ export function registerCalendarTools(
         location,
         { ...(repeat ? { repeat } : {}), ...(reminders ? { reminders } : {}), ...(notify ? { notify } : {}) },
       );
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -576,7 +578,7 @@ export function registerCalendarTools(
       if (args.reminders !== undefined) fields.reminders = args.reminders;
       if (args.notify !== undefined) fields.notify = args.notify;
       const result = await updateAppointmentHandler(await getClient(), appointment_id, year, month, fields);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -605,7 +607,7 @@ export function registerCalendarTools(
         ...(occurrence_day ? { occurrenceDay: occurrence_day } : {}),
         ...(notify ? { notify } : {}),
       });
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 }

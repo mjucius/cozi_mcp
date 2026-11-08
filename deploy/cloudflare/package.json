@@ -1,0 +1,24 @@
+{
+  "name": "calendar-connector",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mjucius/cozi-mcp": "2.6.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.154.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ALLOWED_EMAIL": {
+        "description": "The email you sign in to Cozi with. Only this Cozi account can use your server."
+      },
+      "CF_API_TOKEN": {
+        "description": "Lets your server update itself. [Create the token](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=calendar-connector%20updater) in this Cloudflare account, click Review token, then Create token, and paste it here. Type off to skip updates."
+      },
+      "OAUTH_KV": {
+        "description": "Keeps Claude's sign-in sessions (encrypted)."
+      }
+    }
+  }
+}

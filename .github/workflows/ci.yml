@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Node 20 to match release.yml's build job.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      # The Cloudflare template pins a published version; build it against this commit
+      # instead, so a change that breaks the Worker fails here rather than in users' deploys.
+      # Wrangler needs Node 22.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the Cloudflare template against this commit
+        run: |
+          npm pack --silent
+          tarball="$PWD/$(ls mjucius-cozi-mcp-*.tgz)"
+          tmp=$(mktemp -d)
+          cp -R deploy/cloudflare/. "$tmp"
+          cd "$tmp"
+          node -e "const f='package.json',p=require('./'+f);p.dependencies['@mjucius/cozi-mcp']='file:$tarball';require('fs').writeFileSync(f,JSON.stringify(p))"
+          npm install --no-audit --no-fund
+          npx wrangler deploy --dry-run --outdir out

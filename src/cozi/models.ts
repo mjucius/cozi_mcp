@@ -115,8 +115,6 @@ const reminderMinutes = (v: unknown): number[] | null => {
   return mins.length ? mins.sort((a, b) => a - b) : null;
 };
 
-const optionalDateTime = z.preprocess(dateTimeStringToDate, z.date().nullable()).optional();
-
 const CoziPersonRaw = z
   .object({
     accountPersonId: z.string().optional(),

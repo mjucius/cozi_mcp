@@ -4,6 +4,38 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Run your own server on Cloudflare** for Claude on the web, desktop and phone
+  (#22). A Deploy to Cloudflare button sets it up on the free plan from
+  `deploy/cloudflare/`. Only Claude can connect, through the server's own sign-in
+  page, and only the Cozi account in `ALLOWED_EMAIL` can sign in. Every hourly
+  token refresh signs in to Cozi again, so a changed password cuts Claude off
+  within the hour. The server checks for a release once a day and installs it
+  only when it carries the maintainer's offline signature, about 3 days after
+  that server first saw it. See the
+  [step-by-step setup guide](https://mjucius.github.io/cozi_mcp/setup/).
+- The package exports the Worker as `@mjucius/cozi-mcp/worker` (`dist/worker.js`,
+  one self-contained module).
+- `npm run sign-release` signs a published release for the Cloudflare servers
+  (maintainer only).
+
+### Changed
+
+- The local-time stamp in tool results now reads "User's local time:". On the
+  Cloudflare server it uses the time zone of the browser that signed in; MCPB
+  and npx still use the computer's.
+- MCP SDK ^1.32.2 (GHSA-f897-62hf-6gxq, GHSA-46jr-4wx8-v453). The SDK and zod are
+  bundled into `dist/` and no longer installed as dependencies; they stay
+  optional peer dependencies.
+- A tool call's arguments may contain at most 10,000 values (array elements and
+  object members combined).
+- The SDK's JSON Schema validator is no longer built for every server. cozi_mcp
+  never asks the client for input (elicitation), and such a request would now
+  fail. This cut the CPU time of each request on Cloudflare by about a third.
+
 ## [2.5.1] - 2026-10-15
 
 ### Changed

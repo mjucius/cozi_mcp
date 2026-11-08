@@ -11,11 +11,12 @@ export function registerCoziTools(
   server: McpServer,
   getClient: () => Promise<CoziClient>,
   accessMode: ToolAccessMode = 'read-write',
+  timeZone?: string,
 ): void {
-  registerFamilyMembersTool(server, getClient);
-  registerListTools(server, getClient, accessMode);
-  registerItemTools(server, getClient, accessMode);
-  registerCalendarTools(server, getClient, accessMode);
+  registerFamilyMembersTool(server, getClient, timeZone);
+  registerListTools(server, getClient, accessMode, timeZone);
+  registerItemTools(server, getClient, accessMode, timeZone);
+  registerCalendarTools(server, getClient, accessMode, timeZone);
 }
 
 export const READ_ONLY_TOOL_NAMES = [

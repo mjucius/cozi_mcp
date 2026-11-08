@@ -10,6 +10,9 @@ scripts/
 node_modules/
 package-lock.json
 
+# User guides and their screenshots live in the repo only
+docs/
+
 # Dev configs
 tsconfig.json
 tsup.config.ts
@@ -42,3 +45,15 @@ dist/server.js
 
 # Dev-facing docs (not useful inside the .mcpb to end users)
 CLAUDE.md
+
+# Remote (Cloudflare Worker) deploy: not part of the desktop extension
+deploy/
+dist/worker.*
+tsconfig.worker.json
+
+# Local working files that must never ship in a bundle
+AGENTS.md
+pr-body.md
+cozi_mcp_VULNHUNT_RESULTS_*/
+_to_delete/
+vitest.live.config.ts

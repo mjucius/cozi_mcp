@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # The package itself. Everything here is a dev dependency (the SDK and zod are bundled into
+  # dist/), so one grouped pull request a week. Security fixes arrive on their own, as soon as
+  # GitHub's Dependabot security updates are switched on in the repository settings.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dependencies:
+        patterns: ["*"]
+
+  # The Cloudflare template: move its pin to each new release so new installs start on it.
+  # Wrangler stays pinned by hand; CI builds the template against every commit.
+  - package-ecosystem: npm
+    directory: /deploy/cloudflare
+    schedule:
+      interval: daily
+    allow:
+      - dependency-name: "@mjucius/cozi-mcp"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -64,7 +64,7 @@ describe('local-time stamp', () => {
     expect(res.content).toHaveLength(2);
     expect(OPEN_RE.test(res.content[0]!.text)).toBe(true);
     const { weekday, date, time, timezone } = localNow();
-    expect(res.content[1]!.text).toContain(`Local time on the user's machine: ${weekday} ${date}`);
+    expect(res.content[1]!.text).toContain(`User's local time: ${weekday} ${date}`);
     expect(res.content[1]!.text).toContain(timezone);
     expect(time).toMatch(/^\d{2}:\d{2}$/);
   });
@@ -79,6 +79,13 @@ describe('local-time stamp', () => {
       timezone: 'America/New_York',
     });
     expect(localNow(instant, 'UTC')).toMatchObject({ date: '2026-03-03', weekday: 'Tuesday', time: '02:30' });
+  });
+
+  // The remote Worker runs in UTC and passes the zone the user's browser reported.
+  it('stamps the zone it is given instead of the host zone', () => {
+    const text = toolResult({}, 'Pacific/Auckland').content[1]!.text;
+    expect(text).toContain('(Pacific/Auckland)');
+    expect(text).toContain(localNow(new Date(), 'Pacific/Auckland').date);
   });
 });
 

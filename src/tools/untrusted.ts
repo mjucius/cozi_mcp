@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto';
-
 /**
- * Current date and time on the machine running this server. Both distribution modes
- * (MCPB, npx) run it on the user's own computer, so this is the household's local
- * time; Node's standard `TZ` env var overrides the zone if it ever runs elsewhere.
+ * Current date and time in `timeZone`, by default the zone of the machine running this
+ * server. MCPB and npx run it on the user's own computer, so that is the household's
+ * local time (Node's `TZ` env var overrides it); the remote Worker runs in UTC and
+ * passes the zone the user's browser reported at sign-in.
  */
 export function localNow(
   now = new Date(),
@@ -40,10 +39,10 @@ export function localNow(
  * UTC gets "tomorrow" wrong every evening; the `today` tool alone does not fix that,
  * because a model that is confidently wrong never thinks to call it.
  */
-export function toolResult(data: unknown) {
+export function toolResult(data: unknown, timeZone?: string) {
   const body = JSON.stringify(data);
-  const boundary = randomUUID();
-  const now = localNow();
+  const boundary = crypto.randomUUID();
+  const now = localNow(new Date(), timeZone);
   return {
     content: [
       {
@@ -57,7 +56,7 @@ export function toolResult(data: unknown) {
       {
         type: 'text' as const,
         text:
-          `Local time on the user's machine: ${now.weekday} ${now.date} ${now.time} (${now.timezone}). ` +
+          `User's local time: ${now.weekday} ${now.date} ${now.time} (${now.timezone}). ` +
           'Use this, not your own clock, for "today", "tomorrow" and other relative dates.',
       },
     ],

@@ -49,6 +49,7 @@ export function registerItemTools(
   server: McpServer,
   getClient: () => Promise<CoziClient>,
   accessMode: ToolAccessMode = 'read-write',
+  timeZone?: string,
 ): void {
   // Every item tool is a write — unlike lists.ts/calendar.ts there is no
   // read-only-safe tool to register first, so the gate is the whole function.
@@ -69,7 +70,7 @@ export function registerItemTools(
     },
     async ({ list_id, text, position }) => {
       const result = await addItemHandler(await getClient(), list_id, text, position ?? 0);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -90,7 +91,7 @@ export function registerItemTools(
     },
     async ({ list_id, item_id, text, completed }) => {
       const result = await updateItemHandler(await getClient(), list_id, item_id, text, completed);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 
@@ -106,7 +107,7 @@ export function registerItemTools(
     },
     async ({ list_id, item_ids }) => {
       const result = await removeItemsHandler(await getClient(), list_id, item_ids);
-      return toolResult(result);
+      return toolResult(result, timeZone);
     },
   );
 }

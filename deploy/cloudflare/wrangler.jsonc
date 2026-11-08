@@ -1,0 +1,14 @@
+// Your Cozi connector. Settings that are personal (your Cozi email, the update token) are
+// secrets in the Cloudflare dashboard, never in this file.
+{
+  "name": "calendar-connector",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
+  "ratelimits": [{ "name": "SIGNIN_LIMIT", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }],
+  // Daily check for a signed update (09:17 UTC).
+  "triggers": { "crons": ["17 9 * * *"] }
+}
