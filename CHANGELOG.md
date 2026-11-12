@@ -12,6 +12,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   which version you have or whether an update has arrived. It is read-only and
   doesn't contact Cozi.
 
+### Changed
+
+- **Node 22 or newer is now required** for `npx @mjucius/cozi-mcp`. Node 20 reached
+  end of life in April 2026. Claude Desktop runs the extension on its own built-in
+  Node (24 today), so the extension isn't affected.
+
+### Security
+
+- The bundled fast-uri moves to 3.1.9, which fixes its URI-parsing advisories. It
+  comes with the MCP SDK's schema validator, which this server replaces, so the
+  vulnerable code never ran.
+
 ## [2.6.0] - 2026-11-07
 
 ### Added

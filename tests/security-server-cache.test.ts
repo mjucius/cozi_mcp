@@ -20,7 +20,7 @@ class FakeClient {
 
 function spyConstruct(): FakeClient[] {
   const constructed: FakeClient[] = [];
-  vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+  vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
     const c = new FakeClient(u, p);
     constructed.push(c);
     return c;
@@ -74,7 +74,7 @@ describe('VULN-004: credential cache TTL / re-validation', () => {
 
   it('parallel calls with a bad password are one failed login, not one each, so no lockout is reached', async () => {
     const constructed: FakeClient[] = [];
-    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
       const c = new FakeClient(u, p);
       c.authenticate = vi.fn(async () => {
         throw new AuthenticationError('bad password', 401, {});
@@ -101,7 +101,7 @@ describe('VULN-004: credential cache TTL / re-validation', () => {
 
   it('never-expiring lifetime (null) still serves the same client', async () => {
     const constructed: FakeClient[] = [];
-    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
       const c = new FakeClient(u, p);
       c.tokenLifetimeMs = null;
       constructed.push(c);
@@ -118,7 +118,7 @@ describe('VULN-004: credential cache TTL / re-validation', () => {
 describe('VULN-007: per-username failed-login lockout', () => {
   it('eventually throws the lockout error after repeated failures', async () => {
     const constructed: FakeClient[] = [];
-    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
       const c = new FakeClient(u, p);
       c.authenticate = vi.fn(async () => {
         throw new AuthenticationError('Authentication failed');
@@ -140,7 +140,7 @@ describe('VULN-007: per-username failed-login lockout', () => {
 
   it('a successful login clears the failure counter', async () => {
     let failNext = true;
-    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
       const c = new FakeClient(u, p);
       c.authenticate = vi.fn(async () => {
         if (failNext) throw new AuthenticationError('Authentication failed');
