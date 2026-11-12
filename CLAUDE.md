@@ -11,7 +11,7 @@ Node 22+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 ## Development Commands
 
 - `npm install` — install dependencies
-- `npm test` — vitest (260 tests, mocks `CoziClient` at the boundary; no creds needed)
+- `npm test` — vitest (261 tests, mocks `CoziClient` at the boundary; no creds needed)
 - `npm run test:live` — live conformance suite against the real Cozi API (`tests/live/`; reads `creds.env` or `COZI_USERNAME`/`COZI_PASSWORD`, skips without them). ~43 tests, ~2.5 min, self-cleaning. **Required before every release** — see Testing.
 - `npm run typecheck` — `tsc --noEmit`
 - `npm run build` — tsup → `dist/server.js` + `dist/bin.js`
@@ -36,7 +36,7 @@ Node 22+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
   - `models.ts` — Zod schemas with `.transform()` for camelCase↔snake_case wire mapping.
   - `appointment-payloads.ts` — `toApiCreate/Edit/DeleteFormat()` builders for the three Cozi appointment payload shapes.
   - `errors.ts` — `CoziError` hierarchy.
-- `src/tools/` — 15 MCP tools. Each tool has a `*Handler` function (directly testable) and a `register*Tool(server, getClient)` registrar.
+- `src/tools/` — 15 of the 16 MCP tools; `server_version` is registered in `createServer`, next to `SERVER_VERSION`. Each tool has a `*Handler` function (directly testable) and a `register*Tool(server, getClient)` registrar.
   - `projections.ts` — `slimPerson` / `slimListSummary` / `slimItem` / `slimAppt`. **Wire keys are exact strings** (`type`, `item_count`, `all_day` — not `listType`, `itemCount`, `allDay`).
   - `parsers.ts` — `parseIsoDateTime`, `parseListType`.
   - `untrusted.ts` — `toolResult` returns two text blocks: `content[0]` is the boundary-fenced Cozi data, `content[1]` a local-time stamp from `localNow()` (host clock; `TZ` overrides) so assistants with a UTC clock resolve "tomorrow" correctly.
@@ -91,7 +91,7 @@ Three credential entry points. The two stdio ones share the downstream `getClien
 - `tests/helpers/factories.ts` — `makePerson` / `makeItem` / `makeList` / `makeAppointment` (mirrors prior `conftest.py` factories).
 - `tests/helpers/mock-client.ts` — `makeMockClient()` returns a stand-in with `vi.fn()` for each method.
 
-260 tests total, ~3s wall time, no network access required. `npm test` is the source of truth for counts.
+261 tests total, ~3s wall time, no network access required. `npm test` is the source of truth for counts.
 
 ### Live conformance suite (`tests/live/`, `npm run test:live`)
 

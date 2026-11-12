@@ -204,7 +204,7 @@ describe('/mcp', () => {
     const list = (await (await handleMcp(rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }), props)).json()) as {
       result: { tools: unknown[] };
     };
-    expect(list.result.tools).toHaveLength(15);
+    expect(list.result.tools).toHaveLength(16);
 
     const mock = makeMockClient();
     mock.getLists.mockResolvedValue([makeList({ id: 'L1', title: 'Groceries' })]);

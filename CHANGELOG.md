@@ -6,6 +6,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **`server_version` tool** that reports the running version, so you can ask Claude
+  which version you have or whether an update has arrived. It is read-only and
+  doesn't contact Cozi.
+
 ### Changed
 
 - **Node 22 or newer is now required** for `npx @mjucius/cozi-mcp`. Node 20 reached

@@ -39,7 +39,7 @@ Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP c
 Requires Node 22+. The package will be downloaded on first run.
 
 Set `COZI_READ_ONLY=true` to expose only read operations. In read-only mode, the server registers
-`family_members`, `get_lists`, `get_list_items`, `get_calendar`, `search_calendar`, and `today`; tools that create, update, or
+`family_members`, `get_lists`, `get_list_items`, `get_calendar`, `search_calendar`, `today`, and `server_version`; tools that create, update, or
 delete Cozi data are hidden from MCP clients. Omit the variable, or set it to any value other than
 `1`, `true`, `yes`, or `on`, for the default read-write tool surface.
 
@@ -105,7 +105,7 @@ Two defensive measures narrow the blast radius of that model:
 
 ## Tools
 
-The server exposes 15 tools by default, or 6 read-only tools when `COZI_READ_ONLY=true` (or
+The server exposes 16 tools by default, or 7 read-only tools when `COZI_READ_ONLY=true` (or
 the MCPB read-only setting) is enabled. Returns are slim dicts with `null`/empty fields omitted.
 
 ### Family
@@ -142,6 +142,10 @@ All item tools are hidden in read-only mode.
 Holidays, subscribed calendars and birthdays are refused by `update_appointment` and `delete_appointment`. `notify=true` on any calendar write sends Cozi's change notification to the attendees who have notifications on (like the Cozi app's "notify" option); it is off by default.
 
 `create_appointment`, `update_appointment`, and `delete_appointment` are hidden in read-only mode.
+
+### Version
+
+- `server_version()` → `{name, version}` — the version of cozi-mcp that's running. On your own Cloudflare server it changes when an automatic update installs.
 
 ### Workflow tip
 
