@@ -25,7 +25,7 @@ afterEach(() => {
 describe('per-credentials client cache', () => {
   it('same credentials reuse cached client', async () => {
     const constructed: FakeClient[] = [];
-    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
       const c = new FakeClient(u, p);
       constructed.push(c);
       return c;
@@ -40,7 +40,7 @@ describe('per-credentials client cache', () => {
 
   it('different credentials get separate clients', async () => {
     const constructed: FakeClient[] = [];
-    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
       const c = new FakeClient(u, p);
       constructed.push(c);
       return c;
@@ -66,7 +66,7 @@ describe('per-credentials client cache', () => {
 
   it('same username, different password creates a new client', async () => {
     const constructed: FakeClient[] = [];
-    vi.spyOn(clientModule, 'CoziClient').mockImplementation(((u: string, p: string) => {
+    vi.spyOn(clientModule, 'CoziClient').mockImplementation((function (u: string, p: string) {
       const c = new FakeClient(u, p);
       constructed.push(c);
       return c;

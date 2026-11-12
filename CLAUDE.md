@@ -106,7 +106,7 @@ Rules for this suite: assertions are exact (no `<=`), every claim about wire sem
 
 ## Deployment
 
-Release gate, in order: `npm run typecheck`, `npm test`, `npm run test:live` (all green, sandbox months empty afterwards), then bump `package.json`, `manifest.json`, `package-lock.json` (root + `packages[""]`) and `SERVER_VERSION` in `src/server.ts`, date the changelog entry, and add its compare link. After CI has published the tag, sign it for the remote Workers (below); Dependabot (`.github/dependabot.yml`) then opens the PR that moves `deploy/cloudflare`'s pin to the new version; merge it once CI passes. Dependabot updates the template's `package-lock.json` in the same PR.
+Release gate, in order: `npm run typecheck`, `npm test`, `npm run test:live` (all green, sandbox months empty afterwards), then bump `package.json`, `manifest.json`, `package-lock.json` (root + `packages[""]`) and `SERVER_VERSION` in `src/server.ts`, date the changelog entry, and add its compare link. After CI has published the tag, sign it for the remote Workers (below); Dependabot (`.github/dependabot.yml`) then opens the PR that moves `deploy/cloudflare`'s pin to the new version; merge it once CI passes. Dependabot updates the template's `package-lock.json` in the same PR. Some majors are held back on purpose (vitest 5, tsup 9, TypeScript 6+, zod 4, and Node types past 20); the reasons are in `.github/dependabot.yml`.
 
 ### Remote Worker (Cloudflare template + signed self-update)
 
