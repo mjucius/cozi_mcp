@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.7.0] - 2026-11-11
 
 ### Added
 
@@ -21,6 +21,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   each one, instead of on the maintainer's computer. Servers trust the new key from
   this release on, so the next release is the first one signed this way. The
   maintainer's offline key stays trusted as a backup.
+
+### Fixed
+
+- The setup guide's AI prompt asked for Node 20, but the Cloudflare tool it installs
+  (wrangler) needs Node 22.
 
 ### Security
 
@@ -393,7 +398,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
-[Unreleased]: https://github.com/mjucius/cozi_mcp/compare/v2.6.0...HEAD
+[2.7.0]: https://github.com/mjucius/cozi_mcp/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/mjucius/cozi_mcp/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/mjucius/cozi_mcp/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/mjucius/cozi_mcp/compare/v2.4.0...v2.5.0
