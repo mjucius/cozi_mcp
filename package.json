@@ -24,7 +24,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "main": "./dist/server.js",
   "module": "./dist/server.js",
@@ -74,12 +74,12 @@
     "@cloudflare/workers-oauth-provider": "1.2.4",
     "@cloudflare/workers-types": "5.20261104.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "@types/node": "^20.0.0",
-    "@vitest/coverage-v8": "^4.1.12",
-    "tsup": "^8.0.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "tsup": "^9.0.0",
     "tsx": "^4.23.15",
-    "typescript": "^5.5.0",
-    "vitest": "^4.1.12",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0",
     "zod": "^3.25.76"
   }
 }

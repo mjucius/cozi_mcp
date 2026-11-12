@@ -7,7 +7,7 @@ export default defineConfig({
   dts: { entry: { server: 'src/server.ts' } },
   sourcemap: true,
   clean: true,
-  target: 'node20',
+  target: 'node22',
   splitting: false,
   shims: false,
   // Bundle all runtime deps into dist/* so the MCPB bundle ships ~120KB total

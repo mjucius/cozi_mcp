@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Node 20+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calendar) to AI assistants. Distributed three ways: MCPB bundle (drag-and-drop into Claude Desktop), `npx @mjucius/cozi-mcp` for any other MCP client, and a deploy-your-own Cloudflare Worker (`deploy/cloudflare/`, behind a Deploy to Cloudflare button) that serves Claude's custom connectors over HTTPS (#22). Smithery distribution was dropped in 2.2.3 (zero installs, and its stale listings leaked into the official MCP Registry — #14); don't re-add a registry without a reason to expect users there.
+Node 22+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calendar) to AI assistants. Distributed three ways: MCPB bundle (drag-and-drop into Claude Desktop), `npx @mjucius/cozi-mcp` for any other MCP client, and a deploy-your-own Cloudflare Worker (`deploy/cloudflare/`, behind a Deploy to Cloudflare button) that serves Claude's custom connectors over HTTPS (#22). Smithery distribution was dropped in 2.2.3 (zero installs, and its stale listings leaked into the official MCP Registry — #14); don't re-add a registry without a reason to expect users there.
 
 **v2.0 (2026-05)** is a ground-up Node/TypeScript rewrite of the prior Python v1. The runtime changed AND the tool surface was consolidated (14 → 12 tools, slim projections). See `README.md` for the v1→v2 migration table. Legacy Python source is preserved at git tag `v1.0.0`.
 
@@ -106,7 +106,7 @@ Rules for this suite: assertions are exact (no `<=`), every claim about wire sem
 
 ## Deployment
 
-Release gate, in order: `npm run typecheck`, `npm test`, `npm run test:live` (all green, sandbox months empty afterwards), then bump `package.json`, `manifest.json`, `package-lock.json` (root + `packages[""]`) and `SERVER_VERSION` in `src/server.ts`, date the changelog entry, and add its compare link. After CI has published the tag, sign it for the remote Workers (below); Dependabot (`.github/dependabot.yml`) then opens the PR that moves `deploy/cloudflare`'s pin to the new version; merge it once CI passes. Dependabot updates the template's `package-lock.json` in the same PR. Some majors are held back on purpose (vitest 5, tsup 9, TypeScript 6+, zod 4, and Node types past 20); the reasons are in `.github/dependabot.yml`.
+Release gate, in order: `npm run typecheck`, `npm test`, `npm run test:live` (all green, sandbox months empty afterwards), then bump `package.json`, `manifest.json`, `package-lock.json` (root + `packages[""]`) and `SERVER_VERSION` in `src/server.ts`, date the changelog entry, and add its compare link. After CI has published the tag, sign it for the remote Workers (below); Dependabot (`.github/dependabot.yml`) then opens the PR that moves `deploy/cloudflare`'s pin to the new version; merge it once CI passes. Dependabot updates the template's `package-lock.json` in the same PR. Some majors are held back on purpose (TypeScript 7, zod 4, and Node types past 22); the reasons are in `.github/dependabot.yml`.
 
 ### Remote Worker (Cloudflare template + signed self-update)
 

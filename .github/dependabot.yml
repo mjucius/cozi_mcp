@@ -12,18 +12,12 @@ updates:
       dependencies:
         patterns: ["*"]
         update-types: ["minor", "patch"]
-    # Majors held back on purpose. Drop these when the minimum Node version moves past 20.
+    # Majors held back on purpose.
     ignore:
-      # Node 20 is the supported minimum (engines, manifest.json), and CI tests on it.
+      # Follows the supported minimum, Node 22 (engines, manifest.json), which CI tests on.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
-      # vitest 5 and tsup 9 need Node 22. tsup 8 can't build the type file with TypeScript 6+.
-      - dependency-name: "vitest"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@vitest/coverage-v8"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "tsup"
-        update-types: ["version-update:semver-major"]
+      # TypeScript 7 has no compiler API, which tsup needs to build dist/server.d.ts.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
       # zod 4 grows dist/worker.js by about 56%, too close to the Worker's CPU limit during a

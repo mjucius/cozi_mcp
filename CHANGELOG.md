@@ -6,6 +6,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **Node 22 or newer is now required** for `npx @mjucius/cozi-mcp`. Node 20 reached
+  end of life in April 2026. Claude Desktop runs the extension on its own built-in
+  Node (24 today), so the extension isn't affected.
+
 ### Security
 
 - The bundled fast-uri moves to 3.1.9, which fixes its URI-parsing advisories. It
