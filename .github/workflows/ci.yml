@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Node 20 to match release.yml's build job.
+      # Node 22, the supported minimum, to match release.yml's build job.
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
       - run: npm ci
       - run: npm run typecheck
@@ -26,10 +26,6 @@ jobs:
 
       # The Cloudflare template pins a published version; build it against this commit
       # instead, so a change that breaks the Worker fails here rather than in users' deploys.
-      # Wrangler needs Node 22.
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
       - name: Build the Cloudflare template against this commit
         run: |
           npm pack --silent

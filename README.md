@@ -36,7 +36,7 @@ Add this to your Claude Desktop `claude_desktop_config.json` (or any other MCP c
 }
 ```
 
-Requires Node 20+. The package will be downloaded on first run.
+Requires Node 22+. The package will be downloaded on first run.
 
 Set `COZI_READ_ONLY=true` to expose only read operations. In read-only mode, the server registers
 `family_members`, `get_lists`, `get_list_items`, `get_calendar`, `search_calendar`, and `today`; tools that create, update, or
@@ -166,7 +166,7 @@ The legacy v1 Python source is preserved at git tag [`v1.0.0`](https://github.co
 
 ## Development
 
-Requires Node 20+ (see `.nvmrc`).
+Requires Node 22+ (see `.nvmrc`).
 
 ```bash
 nvm use

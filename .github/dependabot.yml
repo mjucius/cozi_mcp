@@ -1,8 +1,9 @@
 version: 2
 updates:
   # The package itself. Everything here is a dev dependency (the SDK and zod are bundled into
-  # dist/), so one grouped pull request a week. Security fixes arrive on their own, as soon as
-  # GitHub's Dependabot security updates are switched on in the repository settings.
+  # dist/), so minor and patch updates come as one grouped pull request a week, and each major
+  # version as its own. Security fixes arrive on their own, as soon as GitHub's Dependabot
+  # security updates are switched on in the repository settings.
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -10,6 +11,19 @@ updates:
     groups:
       dependencies:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    # Majors held back on purpose.
+    ignore:
+      # Follows the supported minimum, Node 22 (engines, manifest.json), which CI tests on.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 has no compiler API, which tsup needs to build dist/server.d.ts.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # zod 4 grows dist/worker.js by about 56%, too close to the Worker's CPU limit during a
+      # self-update. Tool input is already capped by maxToolInputElements (GHSA-mrhx-c7xc-m3w5).
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
 
   # The Cloudflare template: move its pin to each new release so new installs start on it.
   # Wrangler stays pinned by hand; CI builds the template against every commit.
