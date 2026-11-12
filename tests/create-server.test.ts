@@ -1,5 +1,7 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
-import createServer from '../src/server.js';
+import createServer, { SERVER_VERSION } from '../src/server.js';
 import { READ_ONLY_TOOL_NAMES, TOOL_NAMES, WRITE_TOOL_NAMES } from '../src/tools/index.js';
 
 describe('create_server', () => {
@@ -8,7 +10,7 @@ describe('create_server', () => {
     return Object.keys(tools ?? {});
   };
 
-  it('registers all 15 expected tools', async () => {
+  it('registers all 16 expected tools', async () => {
     const server = createServer({ config: { username: 'test', password: 'test' } });
     // McpServer exposes the underlying server which has list-tools handlers, but
     // the easiest path here is to cross-check against TOOL_NAMES (the source of
@@ -29,6 +31,7 @@ describe('create_server', () => {
       'get_calendar',
       'search_calendar',
       'today',
+      'server_version',
       'create_appointment',
       'update_appointment',
       'delete_appointment',
@@ -44,7 +47,7 @@ describe('create_server', () => {
     const readOnlyTools = new Set(READ_ONLY_TOOL_NAMES);
     const writeTools = new Set(WRITE_TOOL_NAMES);
 
-    expect(readOnlyTools).toEqual(new Set(['family_members', 'get_lists', 'get_list_items', 'get_calendar', 'search_calendar', 'today']));
+    expect(readOnlyTools).toEqual(new Set(['family_members', 'get_lists', 'get_list_items', 'get_calendar', 'search_calendar', 'today', 'server_version']));
     expect(writeTools).toEqual(new Set([
       'create_list',
       'rename_list',
@@ -57,6 +60,24 @@ describe('create_server', () => {
       'delete_appointment',
     ]));
     expect([...readOnlyTools].some((name) => writeTools.has(name))).toBe(false);
+  });
+
+  it('server_version reports the running version without contacting Cozi', async () => {
+    const server = createServer({
+      config: { username: 'test', password: 'test', readOnly: true },
+      getClient: () => Promise.reject(new Error('no Cozi call expected')),
+    });
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: 'test', version: '0' });
+    await client.connect(clientSide);
+    const result = (await client.callTool({ name: 'server_version', arguments: {} })) as {
+      isError?: boolean;
+      content: { text: string }[];
+    };
+    await client.close();
+    expect(result.isError).toBeFalsy();
+    expect(result.content[0]!.text).toContain(JSON.stringify({ name: 'cozi-mcp', version: SERVER_VERSION }));
   });
 
   it('constructs in read-only mode without registering write tools', () => {

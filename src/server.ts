@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AuthenticationError, CoziClient } from './cozi/index.js';
 import { SERVER_INSTRUCTIONS } from './instructions.js';
 import { registerCoziTools } from './tools/index.js';
+import { toolResult } from './tools/untrusted.js';
 
 export const configSchema = z.object({
   username: z.string().describe('Cozi account username/email'),
@@ -153,5 +154,17 @@ export default function createServer({
     { instructions: SERVER_INSTRUCTIONS, maxToolInputElements: 10_000, jsonSchemaValidator: noElicitation },
   );
   registerCoziTools(server, clientFor, config.readOnly === true ? 'read-only' : 'read-write', config.timeZone);
+  // Registered here rather than in tools/, which would have to import this module back.
+  server.registerTool(
+    'server_version',
+    {
+      title: 'Version of this Cozi connector',
+      description:
+        'The version of cozi-mcp, the Cozi connector these tools come from. Returns: {name, version}. ' +
+        'Call it when the user asks which version they have, or whether an update has arrived.',
+      inputSchema: {},
+    },
+    async () => toolResult({ name: 'cozi-mcp', version: SERVER_VERSION }, config.timeZone),
+  );
   return server;
 }

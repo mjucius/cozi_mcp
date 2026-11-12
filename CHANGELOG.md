@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`server_version` tool** that reports the running version, so you can ask Claude
+  which version you have or whether an update has arrived. It is read-only and
+  doesn't contact Cozi.
+
 ## [2.6.0] - 2026-11-07
 
 ### Added
@@ -369,6 +377,7 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[Unreleased]: https://github.com/mjucius/cozi_mcp/compare/v2.6.0...HEAD
 [2.6.0]: https://github.com/mjucius/cozi_mcp/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/mjucius/cozi_mcp/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/mjucius/cozi_mcp/compare/v2.4.0...v2.5.0

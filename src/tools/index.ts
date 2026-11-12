@@ -26,6 +26,7 @@ export const READ_ONLY_TOOL_NAMES = [
   'get_calendar',
   'search_calendar',
   'today',
+  'server_version', // registered by createServer, which holds SERVER_VERSION
 ] as const;
 
 export const WRITE_TOOL_NAMES = [
