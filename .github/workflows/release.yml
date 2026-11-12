@@ -92,6 +92,14 @@ jobs:
           path: cozi-mcp-*.mcpb
           retention-days: 7
 
+      # sign-worker signs this file only if it is byte for byte the one npm published.
+      - name: Upload worker.js artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: worker-bundle
+          path: dist/worker.js
+          retention-days: 7
+
   release:
     name: Attach .mcpb to GitHub Release
     needs: [validate-tag, build]
@@ -165,3 +173,40 @@ jobs:
             exit 0
           fi
           npm publish --access public --provenance
+
+  # Signs dist/worker.js so deployed Cloudflare servers install it (about 3 days after they
+  # first see it). The worker-signing environment holds the key and makes this job wait for
+  # the maintainer's approval; it accepts only v* tags. The key reaches only the last step,
+  # which runs Node built-ins, npm pack and gh, and no installed dependencies.
+  sign-worker:
+    name: Sign worker.js for Cloudflare servers
+    needs: [validate-tag, build, release, npm-publish]
+    runs-on: ubuntu-latest
+    environment: worker-signing
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate-tag.outputs.tag }}
+          # The previous release's tag and src/update-keys.ts decide whether the key is trusted yet.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Download worker.js artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: worker-bundle
+          path: built
+
+      - name: Sign and upload
+        env:
+          WORKER_SIGNING_KEY: ${{ secrets.WORKER_SIGNING_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate-tag.outputs.tag }}
+        run: node scripts/release-sign-ci.mjs "$TAG" built/worker.js
