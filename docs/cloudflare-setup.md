@@ -18,7 +18,7 @@ Open the connector under **Customize > Connectors** in Claude and set the tools 
 
 ### Automatic updates
 
-Your server checks for a new release once a day. It installs one only if it's signed with the maintainer's offline key, and only about 3 days after your server first saw it. The wait leaves time to pull a bad release before anyone installs it. The page at your server's address shows the version and the result of the last check.
+Your server checks for a new release once a day. It installs one only if the maintainer approved and signed it, and only about 3 days after your server first saw it. The wait leaves time to pull a bad release before anyone installs it. The page at your server's address shows the version and the result of the last check.
 
 - **Turn updates on or off:** In Cloudflare, open **Workers & Pages > calendar-connector > Settings**, click the pencil next to `CF_API_TOKEN`, click **Rotate**, paste a token or type `off`, and click **Deploy**. To get a token, [create one](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=calendar-connector%20updater) in the same Cloudflare account as your server, as in [step 5](https://mjucius.github.io/cozi_mcp/setup/#s5), or the update is refused. Signatures expire after 30 days, so after a long break your server waits for the next release instead of installing an old one.
 - **Go back a version:** In the **Deployments** tab, roll back to the version you want. Your server won't reinstall the version you left. It waits for the next release.
