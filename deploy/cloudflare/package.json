@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@mjucius/cozi-mcp": "2.6.0"
+    "@mjucius/cozi-mcp": "2.7.0"
   },
   "devDependencies": {
     "wrangler": "4.154.0"
