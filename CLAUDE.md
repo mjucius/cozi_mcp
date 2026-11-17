@@ -14,7 +14,7 @@ Node 22+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
 - `npm test` — vitest (263 tests, mocks `CoziClient` at the boundary; no creds needed)
 - `npm run test:live` — live conformance suite against the real Cozi API (`tests/live/`; reads `creds.env` or `COZI_USERNAME`/`COZI_PASSWORD`, skips without them). ~43 tests, ~2.5 min, self-cleaning. **Required before every release** — see Testing.
 - `npm run typecheck` — `tsc --noEmit`
-- `npm run build` — tsup → `dist/server.js` + `dist/bin.js`
+- `npm run build` — tsup → `dist/server.js` + `dist/bin.js` + `dist/worker.js`
 - `npm run dev` — local stdio dev (needs `COZI_USERNAME` + `COZI_PASSWORD` env vars)
 - `npm run bundle:mcpb` — produces `cozi-mcp.mcpb` at repo root
 
@@ -36,7 +36,7 @@ Node 22+/TypeScript MCP server that exposes Cozi Family Organizer (lists + calen
   - `models.ts` — Zod schemas with `.transform()` for camelCase↔snake_case wire mapping.
   - `appointment-payloads.ts` — `toApiCreate/Edit/DeleteFormat()` builders for the three Cozi appointment payload shapes.
   - `errors.ts` — `CoziError` hierarchy.
-- `src/tools/` — 15 of the 16 MCP tools; `server_version` is registered in `createServer`, next to `SERVER_VERSION`. Each tool has a `*Handler` function (directly testable) and a `register*Tool(server, getClient)` registrar.
+- `src/tools/` — 15 of the 16 MCP tools; `server_version` is registered in `createServer`, next to `SERVER_VERSION`. Each tool has a `*Handler` function (directly testable); each file has one registrar (`registerCalendarTools`, `registerListTools`, `registerItemTools`, `registerFamilyMembersTool`) that `registerCoziTools` in `index.ts` calls.
   - `projections.ts` — `slimPerson` / `slimListSummary` / `slimItem` / `slimAppt`. **Wire keys are exact strings** (`type`, `item_count`, `all_day` — not `listType`, `itemCount`, `allDay`).
   - `parsers.ts` — `parseIsoDateTime`, `parseListType`.
   - `untrusted.ts` — `toolResult` returns two text blocks: `content[0]` is the boundary-fenced Cozi data, `content[1]` a local-time stamp from `localNow()` (host clock; `TZ` overrides) so assistants with a UTC clock resolve "tomorrow" correctly.
