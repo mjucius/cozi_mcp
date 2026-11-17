@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-11-17
+
+### Changed
+
+- Updated the Cloudflare Workers type declarations used for development.
+- Updated the Cloudflare deployment template to use `@mjucius/cozi-mcp` 2.7.0,
+  including the `server_version` tool and the Node 22 requirement.
+
 ## [2.7.0] - 2026-11-11
 
 ### Added
