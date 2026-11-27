@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 2026-11-27
+
+### Changed
+
+- Updated the Cloudflare Workers type declarations and the test runner used for
+  development.
+- Updated the Cloudflare deployment template to use `@mjucius/cozi-mcp` 2.7.1.
+
 ## [2.7.1] - 2026-11-17
 
 ### Changed
@@ -406,6 +414,8 @@ tools to 12 — see the migration table in the README.
 
 Initial Python release.
 
+[2.7.2]: https://github.com/mjucius/cozi_mcp/compare/v2.7.1...v2.7.2
+[2.7.1]: https://github.com/mjucius/cozi_mcp/compare/v2.7.0...v2.7.1
 [2.7.0]: https://github.com/mjucius/cozi_mcp/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/mjucius/cozi_mcp/compare/v2.5.1...v2.6.0
 [2.5.1]: https://github.com/mjucius/cozi_mcp/compare/v2.5.0...v2.5.1
